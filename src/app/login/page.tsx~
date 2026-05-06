@@ -1,0 +1,27 @@
+'use client'
+
+import { supabase } from '@/lib/supabase'
+
+export default function LoginPage() {
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-6">
+        <h1 className="text-3xl font-medium">StudyOS</h1>
+        <p className="text-gray-500">학습을 하나로</p>
+        <button
+          onClick={handleGoogleLogin}
+          className="rounded-lg border px-6 py-3 hover:bg-gray-50 transition"
+        >
+          Google로 시작하기
+        </button>
+      </div>
+    </div>
+  )
+}

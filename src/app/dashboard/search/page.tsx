@@ -9,7 +9,7 @@ type NoteResult = {
   title: string
   content: string
   tags: string[]
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 type AssignmentResult = {
@@ -18,13 +18,13 @@ type AssignmentResult = {
   description: string | null
   status: string
   due_date: string | null
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 type DeckResult = {
   id: string
   title: string
-  subjects: { name: string; color: string } | null
+  subjects: any
   flashcards: { count: number }[]
 }
 
@@ -84,7 +84,7 @@ export default function SearchPage() {
           .limit(8),
       ])
 
-      const noteData = (notesRes.data || []) as NoteResult[]
+      const noteData = (notesRes.data || []) as unknown as NoteResult[]
       const tagMatches = await (async () => {
         const { data } = await supabase
           .from('notes')
@@ -92,7 +92,7 @@ export default function SearchPage() {
           .eq('profile_id', user.id)
           .contains('tags', [trimmed.toLowerCase()])
           .limit(8)
-        return (data || []) as NoteResult[]
+        return (data || []) as unknown as NoteResult[]
       })()
 
       const merged = [...noteData]
@@ -101,8 +101,8 @@ export default function SearchPage() {
       }
 
       setNotes(merged.slice(0, 8))
-      setAssignments((assignmentsRes.data || []) as AssignmentResult[])
-      setDecks((decksRes.data || []) as DeckResult[])
+      setAssignments((assignmentsRes.data || []) as unknown as AssignmentResult[])
+      setDecks((decksRes.data || []) as unknown as DeckResult[])
       setSearched(true)
       setLoading(false)
     }, 250)

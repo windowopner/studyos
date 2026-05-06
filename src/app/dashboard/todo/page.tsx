@@ -9,7 +9,7 @@ type TodoItem = {
   due_date: string | null
   status: string
   priority: number
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 type CustomTodo = {
@@ -31,7 +31,7 @@ export default function TodoPage() {
       .from('assignments')
       .select('id, title, due_date, status, priority, subjects(name, color)')
       .order('due_date', { ascending: true })
-    setItems(data || [])
+    setItems((data || []) as any)
     setLoading(false)
   }
 

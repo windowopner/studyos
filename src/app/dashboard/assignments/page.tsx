@@ -12,7 +12,7 @@ type Assignment = {
   status: string
   priority: number
   max_points: number | null
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 type ClassroomAssignment = {
@@ -60,7 +60,7 @@ export default function AssignmentsPage() {
       .select('*, subjects(name, color)')
       .order('due_date', { ascending: true })
       .then(({ data }) => {
-        setAssignments(data || [])
+        setAssignments((data || []) as any)
         setLoading(false)
       })
   }

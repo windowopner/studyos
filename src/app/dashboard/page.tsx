@@ -9,14 +9,14 @@ type Assignment = {
   title: string
   due_date: string | null
   status: string
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 type Note = {
   id: string
   title: string
   updated_at: string
-  subjects: { name: string; color: string } | null
+  subjects: any
 }
 
 export default function DashboardPage() {
@@ -43,14 +43,14 @@ export default function DashboardPage() {
         .or(`due_date.gte.${today},due_date.is.null`)
         .order('due_date', { ascending: true })
         .limit(5)
-      setAssignments(upcoming || [])
+      setAssignments((upcoming || []) as any)
 
       const { data: recentNotes } = await supabase
         .from('notes')
         .select('id, title, updated_at, subjects(name, color)')
         .order('updated_at', { ascending: false })
         .limit(5)
-      setNotes(recentNotes || [])
+      setNotes((recentNotes || []) as any)
 
       setLoading(false)
     }

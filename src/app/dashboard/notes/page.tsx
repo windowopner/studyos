@@ -10,7 +10,7 @@ type Note = {
   ai_summary: string | null
   tags: string[]
   updated_at: string
-  subjects: { name: string; color: string } | null
+  subjects: { name: string; color: string } | { name: string; color: string }[] | null
 }
 
 export default function NotesPage() {

@@ -21,10 +21,11 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
-  const isLoginPage = request.nextUrl.pathname === '/login'
+  const { pathname } = request.nextUrl
+  const isAuthRoute = pathname.startsWith('/auth')
+  const isLoginPage = pathname === '/login'
 
-  if (!user && !isAuthRoute && !isLoginPage && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && !isAuthRoute && !isLoginPage && pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -32,5 +33,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
 }

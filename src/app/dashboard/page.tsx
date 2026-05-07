@@ -3,12 +3,15 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 
-type SubjectBadge = {
+type SubjectData = {
   name: string
   color: string
-} | null
+}
+
+type SubjectBadge = SubjectData | null
 
 type Assignment = {
   id: string
@@ -23,6 +26,14 @@ type Note = {
   title: string
   updated_at: string
   subjects: SubjectBadge
+}
+
+type RawAssignment = Omit<Assignment, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
+}
+
+type RawNote = Omit<Note, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 export default function DashboardPage() {
@@ -60,8 +71,14 @@ export default function DashboardPage() {
         .order('updated_at', { ascending: false })
         .limit(5)
 
-      setAssignments((upcoming || []) as Assignment[])
-      setNotes((recentNotes || []) as Note[])
+      setAssignments(((upcoming || []) as RawAssignment[]).map((assignment) => ({
+        ...assignment,
+        subjects: pickJoined(assignment.subjects),
+      })))
+      setNotes(((recentNotes || []) as RawNote[]).map((note) => ({
+        ...note,
+        subjects: pickJoined(note.subjects),
+      })))
       setLoading(false)
     }
 

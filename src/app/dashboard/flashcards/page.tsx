@@ -3,15 +3,30 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
+
+type SubjectData = {
+  name: string
+  color: string
+}
+
+type NoteData = {
+  title: string
+}
 
 type Deck = {
   id: string
   title: string
   created_at: string
-  subjects: { name: string; color: string } | null
-  notes: { title: string } | null
+  subjects: SubjectData | null
+  notes: NoteData | null
   flashcards: { count: number }[]
+}
+
+type RawDeck = Omit<Deck, 'subjects' | 'notes'> & {
+  subjects: JoinedRelation<SubjectData>
+  notes: JoinedRelation<NoteData>
 }
 
 export default function FlashcardsPage() {
@@ -24,7 +39,11 @@ export default function FlashcardsPage() {
       .select('*, subjects(name, color), notes(title), flashcards(count)')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        setDecks(data || [])
+        setDecks(((data || []) as RawDeck[]).map((deck) => ({
+          ...deck,
+          subjects: pickJoined(deck.subjects),
+          notes: pickJoined(deck.notes),
+        })))
         setLoading(false)
       })
   }, [])

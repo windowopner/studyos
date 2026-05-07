@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 
-type SubjectBadge = {
+type SubjectData = {
   name: string
   color: string
-} | null
+}
+
+type SubjectBadge = SubjectData | null
 
 type NoteResult = {
   id: string
@@ -32,6 +35,18 @@ type DeckResult = {
   title: string
   subjects: SubjectBadge
   flashcards: { count: number }[]
+}
+
+type RawNoteResult = Omit<NoteResult, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
+}
+
+type RawAssignmentResult = Omit<AssignmentResult, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
+}
+
+type RawDeckResult = Omit<DeckResult, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 const statusLabel: Record<string, string> = {
@@ -93,7 +108,10 @@ export default function SearchPage() {
           .limit(8),
       ])
 
-      const noteData = (notesRes.data || []) as unknown as NoteResult[]
+      const noteData = ((notesRes.data || []) as RawNoteResult[]).map((note) => ({
+        ...note,
+        subjects: pickJoined(note.subjects),
+      }))
       const { data: tagData } = await supabase
         .from('notes')
         .select('id, title, content, tags, subjects(name, color)')
@@ -102,13 +120,22 @@ export default function SearchPage() {
         .limit(8)
 
       const mergedNotes = [...noteData]
-      for (const note of (tagData || []) as unknown as NoteResult[]) {
+      for (const note of ((tagData || []) as RawNoteResult[]).map((item) => ({
+        ...item,
+        subjects: pickJoined(item.subjects),
+      }))) {
         if (!mergedNotes.find((item) => item.id === note.id)) mergedNotes.push(note)
       }
 
       setNotes(mergedNotes.slice(0, 8))
-      setAssignments((assignmentsRes.data || []) as unknown as AssignmentResult[])
-      setDecks((decksRes.data || []) as unknown as DeckResult[])
+      setAssignments(((assignmentsRes.data || []) as RawAssignmentResult[]).map((assignment) => ({
+        ...assignment,
+        subjects: pickJoined(assignment.subjects),
+      })))
+      setDecks(((decksRes.data || []) as RawDeckResult[]).map((deck) => ({
+        ...deck,
+        subjects: pickJoined(deck.subjects),
+      })))
       setSearched(true)
       setLoading(false)
     }, 250)

@@ -4,11 +4,22 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 
 type Attachment = {
   id: string
   title: string
   link: string
+}
+
+type SubjectData = {
+  name: string
+  color: string
+}
+
+type NoteData = {
+  id: string
+  title: string
 }
 
 type Assignment = {
@@ -20,8 +31,13 @@ type Assignment = {
   priority: number
   max_points: number | null
   classroom_id: string | null
-  subjects: { name: string; color: string } | null
-  notes: { id: string; title: string } | null
+  subjects: SubjectData | null
+  notes: NoteData | null
+}
+
+type RawAssignment = Omit<Assignment, 'subjects' | 'notes'> & {
+  subjects: JoinedRelation<SubjectData>
+  notes: JoinedRelation<NoteData>
 }
 
 const priorityLabel: Record<number, string> = { 1: 'Low', 2: 'Medium', 3: 'High' }
@@ -53,7 +69,11 @@ export default function AssignmentPage() {
         .select('*, subjects(name, color), notes(id, title)')
         .eq('id', id)
         .single()
-      setAssignment(data)
+      setAssignment(data ? {
+        ...(data as RawAssignment),
+        subjects: pickJoined((data as RawAssignment).subjects),
+        notes: pickJoined((data as RawAssignment).notes),
+      } : null)
       setLoading(false)
 
       if (data?.classroom_id) {

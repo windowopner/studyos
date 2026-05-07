@@ -3,12 +3,15 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 
-type SubjectBadge = {
+type SubjectData = {
   name: string
   color: string
-} | null
+}
+
+type SubjectBadge = SubjectData | null
 
 type Assignment = {
   id: string
@@ -19,6 +22,10 @@ type Assignment = {
   priority: number
   max_points: number | null
   subjects: SubjectBadge
+}
+
+type RawAssignment = Omit<Assignment, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 type ClassroomAssignment = {
@@ -66,7 +73,10 @@ export default function AssignmentsPage() {
       .select('*, subjects(name, color)')
       .order('due_date', { ascending: true })
       .then(({ data }) => {
-        setAssignments((data || []) as Assignment[])
+        setAssignments(((data || []) as RawAssignment[]).map((assignment) => ({
+          ...assignment,
+          subjects: pickJoined(assignment.subjects),
+        })))
         setLoading(false)
       })
   }

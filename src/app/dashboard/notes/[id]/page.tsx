@@ -4,6 +4,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
+
+type SubjectData = {
+  name: string
+  color: string
+}
 
 type Note = {
   id: string
@@ -13,7 +19,11 @@ type Note = {
   tags: string[]
   updated_at: string
   subject_id: string | null
-  subjects: { name: string; color: string } | null
+  subjects: SubjectData | null
+}
+
+type RawNote = Omit<Note, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 export default function NotePage() {
@@ -39,7 +49,10 @@ export default function NotePage() {
       .eq('id', id)
       .single()
       .then(({ data }) => {
-        setNote(data)
+        setNote(data ? {
+          ...(data as RawNote),
+          subjects: pickJoined((data as RawNote).subjects),
+        } : null)
         setLoading(false)
       })
   }, [id])
@@ -67,7 +80,10 @@ export default function NotePage() {
       .select('*, subjects(name, color)')
       .single()
     if (!error && data) {
-      setNote(data)
+      setNote({
+        ...(data as RawNote),
+        subjects: pickJoined((data as RawNote).subjects),
+      })
       setEditing(false)
     }
     setSaving(false)

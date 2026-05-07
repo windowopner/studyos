@@ -3,12 +3,15 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 
-type SubjectBadge = {
+type SubjectData = {
   name: string
   color: string
-} | null
+}
+
+type SubjectBadge = SubjectData | null
 
 type Note = {
   id: string
@@ -17,6 +20,10 @@ type Note = {
   tags: string[]
   updated_at: string
   subjects: SubjectBadge
+}
+
+type RawNote = Omit<Note, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 export default function NotesPage() {
@@ -30,7 +37,10 @@ export default function NotesPage() {
         .select('id, title, ai_summary, tags, updated_at, subjects(name, color)')
         .order('updated_at', { ascending: false })
 
-      setNotes(data || [])
+      setNotes(((data || []) as RawNote[]).map((note) => ({
+        ...note,
+        subjects: pickJoined(note.subjects),
+      })))
       setLoading(false)
     }
 

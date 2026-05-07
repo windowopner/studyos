@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 
-type SubjectBadge = {
+type SubjectData = {
   name: string
   color: string
-} | null
+}
+
+type SubjectBadge = SubjectData | null
 
 type TodoItem = {
   id: string
@@ -16,6 +19,10 @@ type TodoItem = {
   status: string
   priority: number
   subjects: SubjectBadge
+}
+
+type RawTodoItem = Omit<TodoItem, 'subjects'> & {
+  subjects: JoinedRelation<SubjectData>
 }
 
 type CustomTodo = {
@@ -38,7 +45,10 @@ export default function TodoPage() {
       .select('id, title, due_date, status, priority, subjects(name, color)')
       .order('due_date', { ascending: true })
 
-    setItems((data || []) as TodoItem[])
+    setItems(((data || []) as RawTodoItem[]).map((item) => ({
+      ...item,
+      subjects: pickJoined(item.subjects),
+    })))
     setLoading(false)
   }
 
@@ -49,7 +59,10 @@ export default function TodoPage() {
         .select('id, title, due_date, status, priority, subjects(name, color)')
         .order('due_date', { ascending: true })
 
-      setItems((data || []) as TodoItem[])
+      setItems(((data || []) as RawTodoItem[]).map((item) => ({
+        ...item,
+        subjects: pickJoined(item.subjects),
+      })))
       setLoading(false)
     }
 

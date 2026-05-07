@@ -1,15 +1,21 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { spotlightProps } from '@/lib/spotlight'
+
+type SubjectBadge = {
+  name: string
+  color: string
+} | null
 
 type NoteResult = {
   id: string
   title: string
   content: string
   tags: string[]
-  subjects: any
+  subjects: SubjectBadge
 }
 
 type AssignmentResult = {
@@ -18,13 +24,13 @@ type AssignmentResult = {
   description: string | null
   status: string
   due_date: string | null
-  subjects: any
+  subjects: SubjectBadge
 }
 
 type DeckResult = {
   id: string
   title: string
-  subjects: any
+  subjects: SubjectBadge
   flashcards: { count: number }[]
 }
 
@@ -33,6 +39,8 @@ const statusLabel: Record<string, string> = {
   in_progress: 'In Progress',
   done: 'Done',
 }
+
+const quickQueries = ['lecture', 'quiz', 'summary', 'flashcards']
 
 export default function SearchPage() {
   const router = useRouter()
@@ -43,6 +51,7 @@ export default function SearchPage() {
   const [decks, setDecks] = useState<DeckResult[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const hasQuery = query.trim().length > 0
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -50,18 +59,18 @@ export default function SearchPage() {
 
   useEffect(() => {
     const trimmed = query.trim()
+
     if (!trimmed) {
-      setNotes([])
-      setAssignments([])
-      setDecks([])
-      setSearched(false)
       return
     }
 
     const timer = setTimeout(async () => {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
+      if (!user) {
+        setLoading(false)
+        return
+      }
 
       const [notesRes, assignmentsRes, decksRes] = await Promise.all([
         supabase
@@ -85,22 +94,19 @@ export default function SearchPage() {
       ])
 
       const noteData = (notesRes.data || []) as unknown as NoteResult[]
-      const tagMatches = await (async () => {
-        const { data } = await supabase
-          .from('notes')
-          .select('id, title, content, tags, subjects(name, color)')
-          .eq('profile_id', user.id)
-          .contains('tags', [trimmed.toLowerCase()])
-          .limit(8)
-        return (data || []) as unknown as NoteResult[]
-      })()
+      const { data: tagData } = await supabase
+        .from('notes')
+        .select('id, title, content, tags, subjects(name, color)')
+        .eq('profile_id', user.id)
+        .contains('tags', [trimmed.toLowerCase()])
+        .limit(8)
 
-      const merged = [...noteData]
-      for (const n of tagMatches) {
-        if (!merged.find(m => m.id === n.id)) merged.push(n)
+      const mergedNotes = [...noteData]
+      for (const note of (tagData || []) as unknown as NoteResult[]) {
+        if (!mergedNotes.find((item) => item.id === note.id)) mergedNotes.push(note)
       }
 
-      setNotes(merged.slice(0, 8))
+      setNotes(mergedNotes.slice(0, 8))
       setAssignments((assignmentsRes.data || []) as unknown as AssignmentResult[])
       setDecks((decksRes.data || []) as unknown as DeckResult[])
       setSearched(true)
@@ -113,138 +119,218 @@ export default function SearchPage() {
   const total = notes.length + assignments.length + decks.length
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6">Search</h1>
+    <div className="mx-auto max-w-5xl">
+      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="page-kicker">Search</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Find it fast</h1>
+            <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
+              Search across notes, assignments, and flashcards from one calmer command bar.
+            </p>
+          </div>
 
-      <div className="relative mb-8">
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search notes, assignments, flashcards..."
-          className="w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-gray-400 pr-10"
-        />
-        {loading && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-            Searching...
-          </span>
-        )}
-        {!loading && query && (
-          <button
-            onClick={() => setQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm"
-          >
-            ✕
-          </button>
-        )}
-      </div>
+          <div className="flex flex-wrap gap-2">
+            {quickQueries.map((item) => (
+              <button
+                key={item}
+                onClick={() => setQuery(item)}
+                className="secondary-button rounded-full px-3 py-1.5 text-xs font-medium"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {searched && !loading && total === 0 && (
-        <p className="text-sm text-gray-400 text-center py-12">No results for &ldquo;{query}&rdquo;</p>
+        <div className="mt-6">
+          <div className="interactive-card rounded-[26px] px-4 py-3 sm:px-5" {...spotlightProps}>
+            <div className="relative z-10 flex items-center gap-3">
+              <span className="text-lg text-[var(--text-muted)]">⌕</span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  setQuery(nextValue)
+                  if (!nextValue.trim()) {
+                    setLoading(false)
+                    setSearched(false)
+                  }
+                }}
+                placeholder="Search notes, assignments, flashcards..."
+                className="field-input w-full border-0 bg-transparent px-0 py-2 text-sm shadow-none focus-visible:shadow-none"
+              />
+
+              {loading && (
+                <span className="text-xs text-[var(--text-muted)]">Searching...</span>
+              )}
+
+              {!loading && query && (
+                <button
+                  onClick={() => setQuery('')}
+                  className="ghost-button text-sm font-medium"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
+              {hasQuery && searched ? `${total} result${total === 1 ? '' : 's'}` : 'Type to search'}
+            </span>
+            <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
+              Notes · Assignments · Flashcards
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {hasQuery && searched && !loading && total === 0 && (
+        <div className="empty-card mt-6 rounded-[28px] px-6 py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)]">
+            No results for &ldquo;{query}&rdquo;
+          </p>
+        </div>
       )}
 
-      {notes.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-            Notes <span className="text-gray-300 normal-case">({notes.length})</span>
-          </h2>
-          <div className="flex flex-col gap-1">
-            {notes.map(n => (
+      {hasQuery && notes.length > 0 && (
+        <section className="mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="section-label">Notes · {notes.length}</h2>
+          </div>
+
+          <div className="space-y-3">
+            {notes.map((note) => (
               <button
-                key={n.id}
-                onClick={() => router.push(`/dashboard/notes/${n.id}`)}
-                className="w-full text-left px-4 py-3 rounded-xl hover:bg-gray-50 transition group"
+                key={note.id}
+                onClick={() => router.push(`/dashboard/notes/${note.id}`)}
+                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
+                {...spotlightProps}
               >
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-medium group-hover:text-black">{n.title}</span>
-                  {n.subjects && (
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full text-white flex-shrink-0"
-                      style={{ backgroundColor: n.subjects.color }}
-                    >
-                      {n.subjects.name}
-                    </span>
-                  )}
-                </div>
-                {n.content && (
-                  <p className="text-xs text-gray-400 truncate">{n.content.slice(0, 120)}</p>
-                )}
-                {n.tags.length > 0 && (
-                  <div className="flex gap-1 mt-1">
-                    {n.tags.slice(0, 4).map(tag => (
-                      <span key={tag} className="text-xs bg-gray-100 px-1.5 py-0.5 rounded-full">{tag}</span>
-                    ))}
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--text)]">{note.title}</span>
+                    {note.subjects && (
+                      <span
+                        className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
+                        style={{ backgroundColor: note.subjects.color }}
+                      >
+                        {note.subjects.name}
+                      </span>
+                    )}
                   </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
 
-      {assignments.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-            Assignments <span className="text-gray-300 normal-case">({assignments.length})</span>
-          </h2>
-          <div className="flex flex-col gap-1">
-            {assignments.map(a => (
-              <button
-                key={a.id}
-                onClick={() => router.push(`/dashboard/assignments/${a.id}`)}
-                className="w-full text-left px-4 py-3 rounded-xl hover:bg-gray-50 transition group"
-              >
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-medium group-hover:text-black">{a.title}</span>
-                  {a.subjects && (
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full text-white flex-shrink-0"
-                      style={{ backgroundColor: a.subjects.color }}
-                    >
-                      {a.subjects.name}
-                    </span>
+                  {note.content && (
+                    <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
+                      {note.content.slice(0, 140)}
+                    </p>
                   )}
-                  <span className="text-xs text-gray-400 ml-auto flex-shrink-0">{statusLabel[a.status] ?? a.status}</span>
+
+                  {note.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {note.tags.slice(0, 4).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] text-[var(--text-muted)]"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {a.description && (
-                  <p className="text-xs text-gray-400 truncate">{a.description.slice(0, 120)}</p>
-                )}
-                {a.due_date && (
-                  <p className="text-xs text-gray-300 mt-0.5">
-                    Due {new Date(a.due_date).toLocaleDateString()}
-                  </p>
-                )}
               </button>
             ))}
           </div>
         </section>
       )}
 
-      {decks.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-            Flashcards <span className="text-gray-300 normal-case">({decks.length})</span>
-          </h2>
-          <div className="flex flex-col gap-1">
-            {decks.map(d => (
+      {hasQuery && assignments.length > 0 && (
+        <section className="mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="section-label">Assignments · {assignments.length}</h2>
+          </div>
+
+          <div className="space-y-3">
+            {assignments.map((assignment) => (
               <button
-                key={d.id}
-                onClick={() => router.push(`/dashboard/flashcards/${d.id}`)}
-                className="w-full text-left px-4 py-3 rounded-xl hover:bg-gray-50 transition group"
+                key={assignment.id}
+                onClick={() => router.push(`/dashboard/assignments/${assignment.id}`)}
+                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
+                {...spotlightProps}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium group-hover:text-black">{d.title}</span>
-                  {d.subjects && (
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full text-white flex-shrink-0"
-                      style={{ backgroundColor: d.subjects.color }}
-                    >
-                      {d.subjects.name}
-                    </span>
-                  )}
-                  <span className="text-xs text-gray-400 ml-auto flex-shrink-0">
-                    {d.flashcards?.[0]?.count ?? 0} cards
+                <div className="relative z-10 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[var(--text)]">{assignment.title}</span>
+                      {assignment.subjects && (
+                        <span
+                          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
+                          style={{ backgroundColor: assignment.subjects.color }}
+                        >
+                          {assignment.subjects.name}
+                        </span>
+                      )}
+                    </div>
+
+                    {assignment.description && (
+                      <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
+                        {assignment.description.slice(0, 140)}
+                      </p>
+                    )}
+
+                    {assignment.due_date && (
+                      <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                        Due {new Date(assignment.due_date).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+
+                  <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                    {statusLabel[assignment.status] ?? assignment.status}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {hasQuery && decks.length > 0 && (
+        <section className="mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="section-label">Flashcards · {decks.length}</h2>
+          </div>
+
+          <div className="space-y-3">
+            {decks.map((deck) => (
+              <button
+                key={deck.id}
+                onClick={() => router.push(`/dashboard/flashcards/${deck.id}`)}
+                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
+                {...spotlightProps}
+              >
+                <div className="relative z-10 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[var(--text)]">{deck.title}</span>
+                      {deck.subjects && (
+                        <span
+                          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
+                          style={{ backgroundColor: deck.subjects.color }}
+                        >
+                          {deck.subjects.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                    {deck.flashcards?.[0]?.count ?? 0} cards
                   </span>
                 </div>
               </button>

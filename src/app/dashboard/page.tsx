@@ -1,22 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { spotlightProps } from '@/lib/spotlight'
+
+type SubjectBadge = {
+  name: string
+  color: string
+} | null
 
 type Assignment = {
   id: string
   title: string
   due_date: string | null
   status: string
-  subjects: any
+  subjects: SubjectBadge
 }
 
 type Note = {
   id: string
   title: string
   updated_at: string
-  subjects: any
+  subjects: SubjectBadge
 }
 
 export default function DashboardPage() {
@@ -31,7 +37,11 @@ export default function DashboardPage() {
       if (!user) return
 
       const { data: profile } = await supabase
-        .from('profiles').select('name').eq('id', user.id).single()
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .single()
+
       if (profile) setName(profile.name || '')
 
       const today = new Date().toISOString().split('T')[0]
@@ -43,75 +53,149 @@ export default function DashboardPage() {
         .or(`due_date.gte.${today},due_date.is.null`)
         .order('due_date', { ascending: true })
         .limit(5)
-      setAssignments((upcoming || []) as any)
 
       const { data: recentNotes } = await supabase
         .from('notes')
         .select('id, title, updated_at, subjects(name, color)')
         .order('updated_at', { ascending: false })
         .limit(5)
-      setNotes((recentNotes || []) as any)
 
+      setAssignments((upcoming || []) as Assignment[])
+      setNotes((recentNotes || []) as Note[])
       setLoading(false)
     }
+
     load()
   }, [])
 
-  if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+  const greeting = name ? `Welcome back, ${name.split(' ')[0]}` : 'Welcome back'
+
+  const overviewStats = useMemo(() => {
+    const nextDue = assignments.find((assignment) => assignment.due_date)?.due_date
+
+    return [
+      {
+        label: 'Open assignments',
+        value: `${assignments.length}`,
+        detail: assignments.length > 0 ? 'Ready to tackle' : 'All clear right now',
+      },
+      {
+        label: 'Fresh notes',
+        value: `${notes.length}`,
+        detail: notes.length > 0 ? 'Recently updated' : 'Nothing new yet',
+      },
+      {
+        label: 'Next deadline',
+        value: nextDue ? new Date(nextDue).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Flexible',
+        detail: nextDue ? 'Closest due date' : 'No dated task yet',
+      },
+    ]
+  }, [assignments, notes])
+
+  if (loading) {
+    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
+  }
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="mx-auto max-w-6xl">
+      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
+        <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="page-kicker">Dashboard</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)] sm:text-4xl">
+              {greeting}
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--text-muted)] sm:text-[15px]">
+              Your workspace now responds with more motion, better hierarchy, and cleaner focus — without changing how you work.
+            </p>
 
-      {/* 인사말 */}
-      <h1 className="text-2xl font-semibold mb-8" style={{ color: 'var(--text)' }}>
-        {name ? `Welcome back, ${name.split(' ')[0]}` : 'Dashboard'}
-      </h1>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/search"
+                className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold"
+              >
+                Explore workspace
+              </Link>
+              <Link
+                href="/dashboard/tutor"
+                className="secondary-button rounded-2xl px-5 py-3 text-sm font-medium"
+              >
+                Open AI Tutor
+              </Link>
+            </div>
+          </div>
 
-      <div className="grid grid-cols-2 gap-6">
+          <div className="grid gap-3 sm:grid-cols-3 xl:w-[34rem]">
+            {overviewStats.map((stat) => (
+              <div
+                key={stat.label}
+                className="interactive-card rounded-[28px] px-4 py-4"
+                {...spotlightProps}
+              >
+                <p className="relative z-10 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                  {stat.label}
+                </p>
+                <p className="relative z-10 mt-3 text-2xl font-semibold text-[var(--text)]">
+                  {stat.value}
+                </p>
+                <p className="relative z-10 mt-2 text-sm text-[var(--text-muted)]">
+                  {stat.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        {/* Upcoming Assignments */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              Upcoming
-            </h2>
-            <Link
-              href="/dashboard/assignments"
-              className="text-xs transition-colors hover:text-[#4ECDC4]"
-              style={{ color: 'var(--text-muted)' }}
-            >
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <section className="glass-panel rounded-[30px] px-5 py-5 sm:px-6 sm:py-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="section-label">Upcoming</p>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Assignments on deck</h2>
+            </div>
+            <Link href="/dashboard/assignments" className="ghost-button text-sm font-medium">
               View all
             </Link>
           </div>
 
           {assignments.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No upcoming assignments.</p>
+            <div className="empty-card rounded-[24px] px-5 py-8 text-center">
+              <p className="text-sm text-[var(--text-muted)]">No upcoming assignments right now.</p>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {assignments.map(a => (
+            <div className="space-y-3">
+              {assignments.map((assignment) => (
                 <Link
-                  key={a.id}
-                  href={`/dashboard/assignments/${a.id}`}
-                  className="rounded-xl p-3 border transition-colors hover:border-[#4ECDC4]/40 group"
-                  style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+                  key={assignment.id}
+                  href={`/dashboard/assignments/${assignment.id}`}
+                  className="interactive-card block rounded-[24px] px-4 py-4"
+                  {...spotlightProps}
                 >
-                  {a.subjects && (
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full text-white mb-1.5 inline-block"
-                      style={{ backgroundColor: a.subjects.color }}
-                    >
-                      {a.subjects.name}
+                  <div className="relative z-10 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      {assignment.subjects && (
+                        <span
+                          className="mb-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium text-white"
+                          style={{ backgroundColor: assignment.subjects.color }}
+                        >
+                          {assignment.subjects.name}
+                        </span>
+                      )}
+                      <p className="text-sm font-semibold text-[var(--text)]">
+                        {assignment.title}
+                      </p>
+                      <p className="mt-2 text-xs text-[var(--text-muted)]">
+                        {assignment.due_date
+                          ? `Due ${new Date(assignment.due_date).toLocaleDateString()}`
+                          : 'No due date'}
+                      </p>
+                    </div>
+
+                    <span className="rounded-full border border-white/10 bg-white/6 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                      {assignment.status === 'in_progress' ? 'In progress' : 'To do'}
                     </span>
-                  )}
-                  <p className="text-sm font-medium transition-colors group-hover:text-[#4ECDC4]"
-                    style={{ color: 'var(--text)' }}>
-                    {a.title}
-                  </p>
-                  {a.due_date && (
-                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                      Due {new Date(a.due_date).toLocaleDateString()}
-                    </p>
-                  )}
+                  </div>
                 </Link>
               ))}
             </div>
@@ -119,54 +203,56 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/assignments/new"
-            className="mt-3 block text-xs text-center border border-dashed rounded-xl py-2 transition-colors hover:text-[#4ECDC4] hover:border-[#4ECDC4]/50"
-            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+            className="secondary-button mt-4 block rounded-[20px] px-4 py-3 text-center text-sm font-medium"
           >
             + New Assignment
           </Link>
-        </div>
+        </section>
 
-        {/* Recent Notes */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              Recent Notes
-            </h2>
-            <Link
-              href="/dashboard/notes"
-              className="text-xs transition-colors hover:text-[#4ECDC4]"
-              style={{ color: 'var(--text-muted)' }}
-            >
+        <section className="glass-panel rounded-[30px] px-5 py-5 sm:px-6 sm:py-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="section-label">Recent</p>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Notes you touched lately</h2>
+            </div>
+            <Link href="/dashboard/notes" className="ghost-button text-sm font-medium">
               View all
             </Link>
           </div>
 
           {notes.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No notes yet.</p>
+            <div className="empty-card rounded-[24px] px-5 py-8 text-center">
+              <p className="text-sm text-[var(--text-muted)]">No notes yet — let’s start something new.</p>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {notes.map(n => (
+            <div className="space-y-3">
+              {notes.map((note) => (
                 <Link
-                  key={n.id}
-                  href={`/dashboard/notes/${n.id}`}
-                  className="rounded-xl p-3 border transition-colors hover:border-[#4ECDC4]/40 group"
-                  style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+                  key={note.id}
+                  href={`/dashboard/notes/${note.id}`}
+                  className="interactive-card block rounded-[24px] px-4 py-4"
+                  {...spotlightProps}
                 >
-                  {n.subjects && (
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full text-white mb-1.5 inline-block"
-                      style={{ backgroundColor: n.subjects.color }}
-                    >
-                      {n.subjects.name}
-                    </span>
-                  )}
-                  <p className="text-sm font-medium transition-colors group-hover:text-[#4ECDC4]"
-                    style={{ color: 'var(--text)' }}>
-                    {n.title}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    {new Date(n.updated_at).toLocaleDateString()}
-                  </p>
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        {note.subjects && (
+                          <span
+                            className="mb-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium text-white"
+                            style={{ backgroundColor: note.subjects.color }}
+                          >
+                            {note.subjects.name}
+                          </span>
+                        )}
+                        <p className="text-sm font-semibold text-[var(--text)]">
+                          {note.title}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-[var(--text-muted)]">
+                        {new Date(note.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
                 </Link>
               ))}
             </div>
@@ -174,32 +260,32 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/notes/new"
-            className="mt-3 block text-xs text-center border border-dashed rounded-xl py-2 transition-colors hover:text-[#4ECDC4] hover:border-[#4ECDC4]/50"
-            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+            className="secondary-button mt-4 block rounded-[20px] px-4 py-3 text-center text-sm font-medium"
           >
             + New Note
           </Link>
-        </div>
+        </section>
       </div>
 
-      {/* AI Tutor 배너 */}
-      <div
-        className="mt-8 rounded-xl p-4 flex items-center justify-between border"
-        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+      <Link
+        href="/dashboard/tutor"
+        className="interactive-card mt-6 block rounded-[30px] px-6 py-6 sm:px-8 sm:py-7"
+        {...spotlightProps}
       >
-        <div>
-          <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>AI Tutor</p>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            Ask anything about your assignments or notes.
-          </p>
+        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="page-kicker">AI Tutor</p>
+            <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Need help untangling a concept?</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+              Jump straight into the tutor with a layout that feels more focused, more conversational, and easier to scan.
+            </p>
+          </div>
+
+          <div className="secondary-button rounded-2xl px-4 py-3 text-sm font-medium text-center">
+            Open study chat
+          </div>
         </div>
-        <Link
-          href="/dashboard/tutor"
-          className="px-4 py-2 text-sm rounded-lg font-medium transition-colors bg-[#4ECDC4] text-[#1c1d22] hover:bg-[#3dbdb5]"
-        >
-          Open
-        </Link>
-      </div>
+      </Link>
     </div>
   )
 }

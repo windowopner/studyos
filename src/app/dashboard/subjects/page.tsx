@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { spotlightProps } from '@/lib/spotlight'
 
 type Course = {
   id: string
@@ -18,44 +19,49 @@ export default function SubjectsPage() {
 
   useEffect(() => {
     fetch('/api/classroom-courses')
-      .then(r => r.json())
+      .then((response) => response.json())
       .then(({ courses }) => {
         setCourses(courses || [])
         setLoading(false)
       })
   }, [])
 
-  if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+  if (loading) {
+    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
+  }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6" style={{ color: 'var(--text)' }}>Subjects</h1>
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-6">
+        <p className="page-kicker">Subjects</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Course spaces, cleaned up</h1>
+      </div>
 
       {courses.length === 0 ? (
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          No active courses found in Google Classroom.
-        </p>
+        <div className="empty-card rounded-[28px] px-6 py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)]">No active courses found in Google Classroom.</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {courses.map(c => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {courses.map((course) => (
             <button
-              key={c.id}
-              onClick={() => router.push(`/dashboard/subjects/${c.id}`)}
-              className="rounded-xl p-4 text-left border transition-colors hover:border-[#4ECDC4]/40 group"
-              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+              key={course.id}
+              onClick={() => router.push(`/dashboard/subjects/${course.id}`)}
+              className="interactive-card rounded-[26px] px-5 py-5 text-left"
+              {...spotlightProps}
             >
-              <p
-                className="font-medium text-sm transition-colors group-hover:text-[#4ECDC4]"
-                style={{ color: 'var(--text)' }}
-              >
-                {c.name}
-              </p>
-              {c.section && (
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.section}</p>
-              )}
-              {c.subject && (
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.subject.trim()}</p>
-              )}
+              <div className="relative z-10">
+                <p className="text-base font-semibold text-[var(--text)]">{course.name}</p>
+                {course.section && (
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">{course.section}</p>
+                )}
+                {course.subject && (
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">{course.subject.trim()}</p>
+                )}
+                {course.description && (
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">{course.description}</p>
+                )}
+              </div>
             </button>
           ))}
         </div>

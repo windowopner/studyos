@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { supabase } from '@/lib/supabase'
+import { spotlightProps } from '@/lib/spotlight'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type Assignment = { id: string; title: string; description: string | null }
@@ -18,8 +18,6 @@ function TutorContent() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [assignment, setAssignment] = useState<Assignment | null>(null)
-  const [note, setNote] = useState<Note | null>(null)
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedAssignment, setSelectedAssignment] = useState(assignmentId || '')
@@ -28,20 +26,36 @@ function TutorContent() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    supabase.from('assignments').select('id, title, description').then(({ data }) => setAssignments(data || []))
-    supabase.from('notes').select('id, title, content').then(({ data }) => setNotes(data || []))
-    loadChats()
-  }, [])
+  const assignment = useMemo(
+    () => selectedAssignment ? assignments.find((item) => item.id === selectedAssignment) || null : null,
+    [selectedAssignment, assignments]
+  )
+  const note = useMemo(
+    () => selectedNote ? notes.find((item) => item.id === selectedNote) || null : null,
+    [selectedNote, notes]
+  )
 
-  const loadChats = async () => {
+  async function loadChats() {
     const { data } = await supabase
       .from('ai_chats')
       .select('id, title, messages')
       .order('created_at', { ascending: false })
       .limit(20)
+
     setChats(data || [])
   }
+
+  useEffect(() => {
+    supabase.from('assignments').select('id, title, description').then(({ data }) => setAssignments(data || []))
+    supabase.from('notes').select('id, title, content').then(({ data }) => setNotes(data || []))
+
+    supabase
+      .from('ai_chats')
+      .select('id, title, messages')
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => setChats(data || []))
+  }, [])
 
   const loadChat = (chat: Chat) => {
     setCurrentChatId(chat.id)
@@ -55,24 +69,12 @@ function TutorContent() {
     setSelectedNote('')
   }
 
-  const deleteChat = async (chatId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const deleteChat = async (chatId: string, event: React.MouseEvent) => {
+    event.stopPropagation()
     await supabase.from('ai_chats').delete().eq('id', chatId)
     if (currentChatId === chatId) newChat()
     loadChats()
   }
-
-  useEffect(() => {
-    if (selectedAssignment) {
-      setAssignment(assignments.find(a => a.id === selectedAssignment) || null)
-    } else setAssignment(null)
-  }, [selectedAssignment, assignments])
-
-  useEffect(() => {
-    if (selectedNote) {
-      setNote(notes.find(n => n.id === selectedNote) || null)
-    } else setNote(null)
-  }, [selectedNote, notes])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -80,20 +82,23 @@ function TutorContent() {
 
   const handleSend = async () => {
     if (!input.trim() || loading) return
-    const userMsg: Message = { role: 'user', content: input }
-    const newMessages = [...messages, userMsg]
+
+    const userMessage: Message = { role: 'user', content: input }
+    const newMessages = [...messages, userMessage]
+
     setMessages(newMessages)
     setInput('')
     setLoading(true)
 
-    const res = await fetch('/api/tutor', {
+    const response = await fetch('/api/tutor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: newMessages, assignment, note }),
     })
 
-    const data = await res.json()
+    const data = await response.json()
     const updatedMessages = [...newMessages, { role: 'assistant' as const, content: data.reply }]
+
     setMessages(updatedMessages)
     setLoading(false)
 
@@ -103,151 +108,162 @@ function TutorContent() {
     if (currentChatId) {
       await supabase.from('ai_chats').update({ messages: updatedMessages }).eq('id', currentChatId)
     } else {
-      const { data: chat } = await supabase.from('ai_chats').insert({
-        profile_id: user.id,
-        title: userMsg.content.slice(0, 50),
-        messages: updatedMessages,
-        assignment_id: selectedAssignment || null,
-        note_id: selectedNote || null,
-      }).select().single()
+      const { data: chat } = await supabase
+        .from('ai_chats')
+        .insert({
+          profile_id: user.id,
+          title: userMessage.content.slice(0, 50),
+          messages: updatedMessages,
+          assignment_id: selectedAssignment || null,
+          note_id: selectedNote || null,
+        })
+        .select()
+        .single()
+
       if (chat) setCurrentChatId(chat.id)
     }
+
     loadChats()
   }
 
-  const selectStyle = {
-    background: 'var(--surface)',
-    borderColor: 'var(--border)',
-    color: 'var(--text)',
-  }
-
   return (
-    <div className="flex gap-4 h-[calc(100vh-80px)]">
-
-      {/* 채팅 히스토리 사이드바 */}
-      <div className="w-44 flex flex-col gap-1.5 overflow-y-auto flex-shrink-0">
-        <button
-          onClick={newChat}
-          className="px-3 py-2 text-sm rounded-lg font-medium transition bg-[#4ECDC4] text-[#1c1d22] hover:bg-[#3dbdb5]"
-        >
+    <div className="grid min-h-[70vh] gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="glass-panel rounded-[30px] px-4 py-4">
+        <button onClick={newChat} className="primary-button w-full rounded-2xl px-4 py-3 text-sm font-semibold">
           New Chat
         </button>
-        {chats.map(chat => (
-          <div
-            key={chat.id}
-            onClick={() => loadChat(chat)}
-            className="group flex items-center justify-between px-3 py-2 text-xs rounded-lg cursor-pointer transition border"
-            style={{
-              background: currentChatId === chat.id ? 'var(--border)' : 'transparent',
-              borderColor: currentChatId === chat.id ? 'var(--border)' : 'transparent',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <span className="truncate flex-1" style={{ color: 'var(--text)' }}>
-              {chat.title || 'Untitled'}
-            </span>
-            <button
-              onClick={e => deleteChat(chat.id, e)}
-              className="ml-1 opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-300"
-            >
-              ×
-            </button>
+
+        <div className="mt-4 space-y-2 overflow-y-auto pr-1">
+          {chats.map((chat) => {
+            const active = currentChatId === chat.id
+
+            return (
+              <button
+                key={chat.id}
+                onClick={() => loadChat(chat)}
+                className="interactive-card flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left"
+                {...spotlightProps}
+                style={active ? {
+                  background: 'linear-gradient(135deg, rgb(var(--accent-rgb) / 0.18), var(--surface))',
+                  borderColor: 'var(--border-strong)',
+                } : undefined}
+              >
+                <span className="relative z-10 truncate pr-2 text-xs font-medium text-[var(--text)]">
+                  {chat.title || 'Untitled'}
+                </span>
+                <span
+                  onClick={(event) => deleteChat(chat.id, event)}
+                  className="relative z-10 text-xs text-red-400 hover:text-red-300"
+                >
+                  ×
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </aside>
+
+      <section className="glass-panel flex min-w-0 flex-col rounded-[30px] px-5 py-5 sm:px-6">
+        <div className="mb-5 flex flex-col gap-4">
+          <div>
+            <p className="page-kicker">AI Tutor</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Ask with context</h1>
           </div>
-        ))}
-      </div>
 
-      {/* 메인 영역 */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <h1 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text)' }}>AI Tutor</h1>
+          <div className="grid gap-3 md:grid-cols-2">
+            <select
+              value={selectedAssignment}
+              onChange={(event) => setSelectedAssignment(event.target.value)}
+              className="field-input rounded-2xl px-4 py-3 text-sm"
+            >
+              <option value="">No assignment context</option>
+              {assignments.map((item) => (
+                <option key={item.id} value={item.id}>{item.title}</option>
+              ))}
+            </select>
 
-        {/* 컨텍스트 선택 */}
-        <div className="flex gap-3 mb-4">
-          <select
-            value={selectedAssignment}
-            onChange={e => setSelectedAssignment(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1 transition focus:border-[#4ECDC4]"
-            style={selectStyle}
-          >
-            <option value="">No assignment context</option>
-            {assignments.map(a => <option key={a.id} value={a.id}>{a.title}</option>)}
-          </select>
-          <select
-            value={selectedNote}
-            onChange={e => setSelectedNote(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1 transition focus:border-[#4ECDC4]"
-            style={selectStyle}
-          >
-            <option value="">No note context</option>
-            {notes.map(n => <option key={n.id} value={n.id}>{n.title}</option>)}
-          </select>
+            <select
+              value={selectedNote}
+              onChange={(event) => setSelectedNote(event.target.value)}
+              className="field-input rounded-2xl px-4 py-3 text-sm"
+            >
+              <option value="">No note context</option>
+              {notes.map((item) => (
+                <option key={item.id} value={item.id}>{item.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {(assignment || note) && (
+            <div className="soft-badge w-fit rounded-full px-3 py-1.5 text-xs font-medium">
+              Context:
+              {assignment && <span className="text-[var(--text)]">{assignment.title}</span>}
+              {assignment && note && <span className="text-[var(--text)]">+</span>}
+              {note && <span className="text-[var(--text)]">{note.title}</span>}
+            </div>
+          )}
         </div>
 
-        {/* 컨텍스트 배너 */}
-        {(assignment || note) && (
-          <div
-            className="rounded-xl px-4 py-2.5 mb-4 text-xs border"
-            style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-          >
-            Context:{' '}
-            {assignment && <span className="font-medium" style={{ color: 'var(--text)' }}>{assignment.title}</span>}
-            {assignment && note && ' + '}
-            {note && <span className="font-medium" style={{ color: 'var(--text)' }}>{note.title}</span>}
-          </div>
-        )}
-
-        {/* 메시지 */}
-        <div className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4">
+        <div className="flex-1 space-y-4 overflow-y-auto pb-4">
           {messages.length === 0 && (
-            <p className="text-sm text-center mt-8" style={{ color: 'var(--text-muted)' }}>
-              Ask anything. Select an assignment or note for context.
-            </p>
+            <div className="empty-card rounded-[28px] px-6 py-10 text-center">
+              <p className="text-sm text-[var(--text-muted)]">
+                Ask anything. Select an assignment or note if you want extra context.
+              </p>
+            </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+
+          {messages.map((message, index) => (
+            <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className="max-w-[80%] rounded-2xl px-4 py-3 text-sm"
-                style={m.role === 'user'
-                  ? { background: '#4ECDC4', color: '#1c1d22' }
-                  : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }
-                }
+                className="max-w-[85%] rounded-[24px] px-4 py-3 text-sm leading-7"
+                style={message.role === 'user'
+                  ? {
+                    background: 'linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-secondary-rgb)))',
+                    color: '#07111f',
+                  }
+                  : {
+                    background: 'var(--surface)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                  }}
               >
-                {m.content}
+                {message.content}
               </div>
             </div>
           ))}
+
           {loading && (
             <div className="flex justify-start">
-              <div
-                className="rounded-2xl px-4 py-3 text-sm border"
-                style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-              >
-                Thinking...
+              <div className="interactive-card rounded-[24px] px-4 py-3 text-sm text-[var(--text-muted)]" {...spotlightProps}>
+                <span className="relative z-10">Thinking...</span>
               </div>
             </div>
           )}
+
           <div ref={bottomRef} />
         </div>
 
-        {/* 입력 */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Ask a question..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSend()}
-            className="flex-1 border rounded-xl px-4 py-3 text-sm outline-none transition focus:border-[#4ECDC4]"
-            style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="px-4 py-3 text-sm rounded-xl font-medium transition bg-[#4ECDC4] text-[#1c1d22] hover:bg-[#3dbdb5] disabled:opacity-40"
-          >
-            Send
-          </button>
+        <div className="interactive-card mt-2 rounded-[26px] px-4 py-3" {...spotlightProps}>
+          <div className="relative z-10 flex gap-3">
+            <input
+              type="text"
+              placeholder="Ask a question..."
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && handleSend()}
+              className="field-input w-full border-0 bg-transparent px-0 py-2 text-sm shadow-none focus-visible:shadow-none"
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="primary-button rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
+            >
+              Send
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

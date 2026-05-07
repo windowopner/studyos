@@ -1,8 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import { spotlightProps } from '@/lib/spotlight'
 
 type Deck = {
   id: string
@@ -28,56 +29,63 @@ export default function FlashcardsPage() {
       })
   }, [])
 
-  if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+  if (loading) {
+    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
+  }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6" style={{ color: 'var(--text)' }}>Flashcards</h1>
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-6">
+        <p className="page-kicker">Flashcards</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Recall, but sharper</h1>
+      </div>
 
       {decks.length === 0 ? (
-        <div className="text-center mt-12">
-          <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>No flashcard decks yet.</p>
-          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            Open a note and click "Generate Flashcards" to create one.
+        <div className="empty-card rounded-[28px] px-6 py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)]">No flashcard decks yet.</p>
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            Open a note and click &ldquo;Generate Flashcards&rdquo; to create one.
           </p>
-          <Link
-            href="/dashboard/notes"
-            className="inline-block px-4 py-2 text-sm rounded-lg font-medium transition bg-[#4ECDC4] text-[#1c1d22] hover:bg-[#3dbdb5]"
-          >
+          <Link href="/dashboard/notes" className="primary-button mt-5 inline-block rounded-2xl px-5 py-3 text-sm font-semibold">
             Go to Notes
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {decks.map(deck => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {decks.map((deck) => (
             <Link
               key={deck.id}
               href={`/dashboard/flashcards/${deck.id}`}
-              className="rounded-xl p-4 border transition-colors hover:border-[#4ECDC4]/40 group"
-              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+              className="interactive-card block rounded-[26px] px-5 py-5"
+              {...spotlightProps}
             >
-              {deck.subjects && (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full text-white mb-2 inline-block"
-                  style={{ backgroundColor: deck.subjects.color }}
-                >
-                  {deck.subjects.name}
-                </span>
-              )}
-              <h2
-                className="font-medium text-sm mb-1 transition-colors group-hover:text-[#4ECDC4]"
-                style={{ color: 'var(--text)' }}
-              >
-                {deck.title}
-              </h2>
-              {deck.notes && (
-                <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
-                  From: {deck.notes.title}
-                </p>
-              )}
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {deck.flashcards[0]?.count || 0} cards
-              </p>
+              <div className="relative z-10">
+                {deck.subjects && (
+                  <span
+                    className="inline-block rounded-full px-2.5 py-1 text-[11px] font-medium text-white"
+                    style={{ backgroundColor: deck.subjects.color }}
+                  >
+                    {deck.subjects.name}
+                  </span>
+                )}
+
+                <h2 className="mt-3 text-base font-semibold text-[var(--text)]">{deck.title}</h2>
+
+                {deck.notes && (
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">
+                    From: {deck.notes.title}
+                  </p>
+                )}
+
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {new Date(deck.created_at).toLocaleDateString()}
+                  </span>
+                  <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                    {deck.flashcards[0]?.count || 0} cards
+                  </span>
+                </div>
+              </div>
             </Link>
           ))}
         </div>

@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { spotlightProps } from '@/lib/spotlight'
 
 export default function ProfilePage() {
   const [name, setName] = useState('')
@@ -17,7 +18,9 @@ export default function ProfilePage() {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
       setEmail(user.email || '')
+
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (data) {
         setName(data.name || '')
@@ -25,19 +28,30 @@ export default function ProfilePage() {
         setPlan(data.plan || 'free')
       }
     }
+
     load()
   }, [])
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
     if (!file) return
+
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setUploading(false); return }
+    if (!user) {
+      setUploading(false)
+      return
+    }
+
     const ext = file.name.split('.').pop()
     const path = `avatars/${user.id}.${ext}`
     const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
-    if (error) { alert('Upload failed: ' + error.message); setUploading(false); return }
+    if (error) {
+      alert(`Upload failed: ${error.message}`)
+      setUploading(false)
+      return
+    }
+
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
     await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id)
     setAvatarUrl(publicUrl)
@@ -47,88 +61,86 @@ export default function ProfilePage() {
   const handleSave = async () => {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    if (!user) {
+      setSaving(false)
+      return
+    }
+
     await supabase.from('profiles').update({ name }).eq('id', user.id)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const inputStyle = {
-    background: 'var(--surface)',
-    borderColor: 'var(--border)',
-    color: 'var(--text)',
-  }
-
   return (
-    <div className="max-w-lg mx-auto">
-      <h1 className="text-2xl font-semibold mb-8" style={{ color: 'var(--text)' }}>Profile Settings</h1>
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-6">
+        <p className="page-kicker">Profile</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Fine-tune your space</h1>
+      </div>
 
-      {/* 아바타 + 기본 정보 */}
-      <div className="flex items-center gap-4 mb-8">
-        <div className="relative group flex-shrink-0">
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="avatar" className="w-16 h-16 rounded-full object-cover" />
-          ) : (
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--border)' }}
+      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+          <div className="interactive-card relative h-24 w-24 rounded-[28px]" {...spotlightProps}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="avatar" className="absolute inset-0 h-full w-full rounded-[28px] object-cover" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center rounded-[28px] bg-[rgb(var(--accent-rgb)_/_0.18)] text-3xl font-semibold text-[var(--text)]">
+                {name?.[0] || '?'}
+              </div>
+            )}
+
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="absolute inset-0 flex items-center justify-center rounded-[28px] bg-black/45 text-xs font-semibold text-white opacity-0 transition hover:opacity-100"
             >
-              <span className="text-xl" style={{ color: 'var(--text-muted)' }}>{name?.[0] || '?'}</span>
-            </div>
-          )}
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
-          >
-            <span className="text-white text-xs font-medium">{uploading ? '...' : 'Edit'}</span>
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-        </div>
-        <div>
-          <p className="font-medium" style={{ color: 'var(--text)' }}>{name}</p>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{email}</p>
-          <span
-            className="text-xs px-2 py-0.5 rounded-full mt-1 inline-block capitalize"
-            style={{ background: 'var(--border)', color: 'var(--text-muted)' }}
-          >
-            {plan} plan
-          </span>
-        </div>
-      </div>
+              {uploading ? 'Uploading...' : 'Change'}
+            </button>
 
-      {/* 폼 */}
-      <div className="flex flex-col gap-4">
-        <div>
-          <label className="text-sm mb-1 block" style={{ color: 'var(--text-muted)' }}>Display Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm outline-none transition focus:border-[#4ECDC4]"
-            style={inputStyle}
-          />
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+          </div>
+
+          <div>
+            <p className="text-xl font-semibold text-[var(--text)]">{name || 'Your profile'}</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{email}</p>
+            <span className="soft-badge mt-3 rounded-full px-3 py-1.5 text-xs font-medium capitalize">
+              {plan} plan
+            </span>
+          </div>
         </div>
 
-        <div>
-          <label className="text-sm mb-1 block" style={{ color: 'var(--text-muted)' }}>Email</label>
-          <input
-            type="text"
-            value={email}
-            disabled
-            className="w-full border rounded-lg px-3 py-2 text-sm outline-none opacity-50 cursor-not-allowed"
-            style={inputStyle}
-          />
-        </div>
+        <div className="mt-8 grid gap-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-[var(--text-muted)]">Display Name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="field-input w-full rounded-2xl px-4 py-3 text-sm"
+            />
+          </label>
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-2 text-sm rounded-lg font-medium transition w-fit disabled:opacity-40 bg-[#4ECDC4] text-[#1c1d22] hover:bg-[#3dbdb5]"
-        >
-          {saved ? 'Saved ✓' : saving ? 'Saving...' : 'Save Changes'}
-        </button>
-      </div>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-[var(--text-muted)]">Email</span>
+            <input
+              type="text"
+              value={email}
+              disabled
+              className="field-input w-full cursor-not-allowed rounded-2xl px-4 py-3 text-sm opacity-60"
+            />
+          </label>
+
+          <div className="pt-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-40"
+            >
+              {saved ? 'Saved ✓' : saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }

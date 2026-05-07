@@ -4,9 +4,9 @@ import { supabase } from '@/lib/supabase'
 import { spotlightProps } from '@/lib/spotlight'
 
 const features = [
-  'Assignments, notes, flashcards, and AI tutor in one flow',
-  'A calmer dashboard with hover-reactive panels',
-  'Google Classroom-friendly setup for daily study work',
+  'Assignments, notes, flashcards, and AI tutor',
+  'Simple dashboard and search',
+  'Works with Google Classroom',
 ]
 
 export default function LoginPage() {
@@ -42,21 +42,21 @@ export default function LoginPage() {
         <section className="flex flex-col justify-between gap-8">
           <div>
             <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-              Welcome back to StudyOS
+              StudyOS
             </span>
             <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-tight text-[var(--text)] sm:text-5xl">
-              Study tools that feel a lot more alive.
+              Study in one place.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
-              We kept your workflow intact and gave the interface more presence — richer depth, cleaner focus, and interactions that respond as you move.
+              Assignments, notes, flashcards, and AI help.
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             {[
-              { label: 'Unified', value: 'Workspace' },
-              { label: 'Interactive', value: 'Hover UI' },
-              { label: 'Built for', value: 'Daily study' },
+              { label: 'All-in-one', value: 'Workspace' },
+              { label: 'Fast', value: 'UI' },
+              { label: 'For', value: 'Study' },
             ].map((item) => (
               <div
                 key={item.label}
@@ -77,10 +77,10 @@ export default function LoginPage() {
         <section className="flex flex-col gap-4">
           <div className="interactive-card rounded-[32px] p-6 sm:p-7" {...spotlightProps}>
             <div className="relative z-10">
-              <p className="page-kicker">Get started</p>
+              <p className="page-kicker">Sign in</p>
               <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Sign in with Google</h2>
               <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-                Classroom sync, docs access, and the full StudyOS workspace unlock after one sign-in.
+                Sign in to start.
               </p>
             </div>
 
@@ -105,13 +105,13 @@ export default function LoginPage() {
             <div className="interactive-card rounded-3xl px-5 py-5" {...spotlightProps}>
               <p className="relative z-10 text-sm font-medium text-[var(--text)]">Assignments</p>
               <p className="relative z-10 mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                Deadlines, priorities, and imports feel clearer at a glance.
+                Track work and due dates.
               </p>
             </div>
             <div className="interactive-card rounded-3xl px-5 py-5" {...spotlightProps}>
               <p className="relative z-10 text-sm font-medium text-[var(--text)]">AI Tutor</p>
               <p className="relative z-10 mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                Ask with context and keep chats in a more focused workspace.
+                Ask questions about your work.
               </p>
             </div>
           </div>

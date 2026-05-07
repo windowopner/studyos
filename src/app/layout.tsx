@@ -4,7 +4,7 @@ import Providers from "./providers";
 
 export const metadata: Metadata = {
   title: "StudyOS",
-  description: "An interactive study workspace for assignments, notes, and AI help.",
+  description: "Study tools for assignments, notes, flashcards, and AI help.",
 };
 
 export default function RootLayout({

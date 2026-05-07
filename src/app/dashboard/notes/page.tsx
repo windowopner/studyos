@@ -56,7 +56,7 @@ export default function NotesPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="page-kicker">Notes</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Your recent thinking</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Notes</h1>
         </div>
 
         <Link href="/dashboard/notes/new" className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold">

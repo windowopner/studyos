@@ -25,15 +25,15 @@ const navItems = [
 ]
 
 const sectionMeta = [
-  { href: '/dashboard/search', title: 'Search your study universe', description: 'Notes, assignments, and flashcards now sit in one cleaner, faster flow.' },
-  { href: '/dashboard/assignments', title: 'Deadlines with more signal', description: 'Scan priorities quickly, then dive into the work that needs you most.' },
-  { href: '/dashboard/todo', title: 'A calmer task board', description: 'Progress stays visible while each action feels lighter and easier to check off.' },
-  { href: '/dashboard/notes', title: 'Notes that feel alive', description: 'Recent work, summaries, and tags now sit inside a more tactile workspace.' },
-  { href: '/dashboard/flashcards', title: 'Active recall, polished', description: 'Decks stand out faster, with more depth and clearer hierarchy.' },
-  { href: '/dashboard/tutor', title: 'An AI study desk', description: 'Context, chat history, and prompts now share a more focused, conversational layout.' },
-  { href: '/dashboard/subjects', title: 'Course spaces with breathing room', description: 'Subjects are easier to scan, compare, and jump into.' },
-  { href: '/dashboard/community', title: 'Rooms with presence', description: 'Shared spaces feel more welcoming, private, and interactive.' },
-  { href: '/dashboard/profile', title: 'Your setup, refined', description: 'Profile details sit in a softer editor with clearer emphasis and feedback.' },
+  { href: '/dashboard/search', title: 'Search', description: 'Find notes, assignments, and flashcards.' },
+  { href: '/dashboard/assignments', title: 'Assignments', description: 'See deadlines and priorities.' },
+  { href: '/dashboard/todo', title: 'To-do', description: 'Track what to do and what is done.' },
+  { href: '/dashboard/notes', title: 'Notes', description: 'See recent notes and tags.' },
+  { href: '/dashboard/flashcards', title: 'Flashcards', description: 'Review your decks.' },
+  { href: '/dashboard/tutor', title: 'AI Tutor', description: 'Ask questions with context.' },
+  { href: '/dashboard/subjects', title: 'Subjects', description: 'Open your classes.' },
+  { href: '/dashboard/community', title: 'Community', description: 'Join or create rooms.' },
+  { href: '/dashboard/profile', title: 'Profile', description: 'Manage your account.' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -80,14 +80,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const currentMeta = useMemo(() => {
     if (pathname === '/dashboard') {
       return {
-        title: 'Your study cockpit',
-        description: 'The workspace now feels more responsive, layered, and ready for quick action.',
+        title: 'Dashboard',
+        description: 'See your work at a glance.',
       }
     }
 
     return sectionMeta.find((item) => pathname.startsWith(item.href)) ?? {
-      title: 'StudyOS workspace',
-      description: 'A more interactive shell for the work you already do every day.',
+      title: 'StudyOS',
+      description: 'Your study tools.',
     }
   }, [pathname])
 
@@ -128,11 +128,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <div>
                 <p className="page-kicker">StudyOS</p>
-                <h1 className="mt-1 text-lg font-semibold tracking-tight text-[var(--text)]">Interactive workspace</h1>
+                <h1 className="mt-1 text-lg font-semibold tracking-tight text-[var(--text)]">Study workspace</h1>
               </div>
             </div>
             <p className="text-sm leading-6 text-[var(--text-muted)]">
-              Hover around — cards, menus, and actions now respond with more depth and motion.
+              Assignments, notes, search, and AI tools.
             </p>
           </div>
 
@@ -241,7 +241,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <header className="glass-panel rounded-[30px] px-6 py-6 lg:px-8">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div className="max-w-3xl">
-                <p className="page-kicker">Workspace refresh</p>
+                <p className="page-kicker">StudyOS</p>
                 <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-3xl">
                   {currentMeta.title}
                 </h2>
@@ -252,7 +252,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-                  Cursor-reactive cards
+                  Quick access
                 </span>
                 <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
                   {currentDate}

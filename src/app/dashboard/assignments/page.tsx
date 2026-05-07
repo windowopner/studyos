@@ -215,7 +215,7 @@ export default function AssignmentsPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="page-kicker">Assignments</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Deadlines with more clarity</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Assignments</h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

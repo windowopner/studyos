@@ -76,7 +76,7 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
         <p className="page-kicker">Profile</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Fine-tune your space</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Profile</h1>
       </div>
 
       <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">

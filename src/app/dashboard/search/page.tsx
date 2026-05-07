@@ -151,9 +151,9 @@ export default function SearchPage() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <p className="page-kicker">Search</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Find it fast</h1>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Search</h1>
             <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
-              Search across notes, assignments, and flashcards from one calmer command bar.
+              Find notes, assignments, and flashcards.
             </p>
           </div>
 
@@ -207,7 +207,7 @@ export default function SearchPage() {
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-              {hasQuery && searched ? `${total} result${total === 1 ? '' : 's'}` : 'Type to search'}
+              {hasQuery && searched ? `${total} result${total === 1 ? '' : 's'}` : 'Search to begin'}
             </span>
             <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
               Notes · Assignments · Flashcards

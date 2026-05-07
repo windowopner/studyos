@@ -125,9 +125,9 @@ export default function TodoPage() {
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-2xl">
             <p className="page-kicker">To-do</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Keep momentum visible</h1>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">To-do</h1>
             <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
-              Tasks now sit in a calmer board with stronger progress feedback and more tactile interactions.
+              Track tasks and progress.
             </p>
           </div>
 

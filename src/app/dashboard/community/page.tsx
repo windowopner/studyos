@@ -117,7 +117,7 @@ export default function CommunityPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="page-kicker">Community</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Study rooms with more presence</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Community</h1>
         </div>
 
         <button onClick={() => setShowModal(true)} className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold">

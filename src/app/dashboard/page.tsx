@@ -123,7 +123,7 @@ export default function DashboardPage() {
               {greeting}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--text-muted)] sm:text-[15px]">
-              Your workspace now responds with more motion, better hierarchy, and cleaner focus — without changing how you work.
+              See assignments, notes, and tutor in one place.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -131,13 +131,13 @@ export default function DashboardPage() {
                 href="/dashboard/search"
                 className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold"
               >
-                Explore workspace
+                Search
               </Link>
               <Link
                 href="/dashboard/tutor"
                 className="secondary-button rounded-2xl px-5 py-3 text-sm font-medium"
               >
-                Open AI Tutor
+                AI Tutor
               </Link>
             </div>
           </div>
@@ -292,14 +292,14 @@ export default function DashboardPage() {
         <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="page-kicker">AI Tutor</p>
-            <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Need help untangling a concept?</h2>
+            <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Need help?</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-              Jump straight into the tutor with a layout that feels more focused, more conversational, and easier to scan.
+              Open AI Tutor for this work.
             </p>
           </div>
 
           <div className="secondary-button rounded-2xl px-4 py-3 text-sm font-medium text-center">
-            Open study chat
+            Open tutor
           </div>
         </div>
       </Link>

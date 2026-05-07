@@ -34,7 +34,7 @@ export default function SubjectsPage() {
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
         <p className="page-kicker">Subjects</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Course spaces, cleaned up</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Subjects</h1>
       </div>
 
       {courses.length === 0 ? (

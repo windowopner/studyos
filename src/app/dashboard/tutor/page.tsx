@@ -167,7 +167,7 @@ function TutorContent() {
         <div className="mb-5 flex flex-col gap-4">
           <div>
             <p className="page-kicker">AI Tutor</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Ask with context</h1>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">AI Tutor</h1>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">

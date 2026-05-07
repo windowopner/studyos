@@ -56,7 +56,7 @@ export default function FlashcardsPage() {
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
         <p className="page-kicker">Flashcards</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Recall, but sharper</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Flashcards</h1>
       </div>
 
       {decks.length === 0 ? (

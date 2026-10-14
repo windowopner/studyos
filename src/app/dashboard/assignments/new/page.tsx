@@ -26,15 +26,15 @@ export default function NewAssignmentPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    supabase.from('subjects').select('*').then(({ data }) => setSubjects(data || []))
-    supabase.from('notes').select('id, title').then(({ data }) => setNotes(data || []))
+    supabase.from('subjects').select('id, name, color').order('name').then(({ data }) => setSubjects(data || []))
+    supabase.from('notes').select('id, title').order('updated_at', { ascending: false }).then(({ data }) => setNotes(data || []))
   }, [])
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    if (!user) { setSaving(false); toast('Your session ended. Sign in again.', 'error'); return }
 
     const { data, error } = await supabase.from('assignments').insert({
       profile_id: user.id,
@@ -69,7 +69,7 @@ export default function NewAssignmentPage() {
         className="glass-panel flex flex-col gap-5 rounded-2xl p-5 sm:p-6"
       >
         <Field label="Title" htmlFor="title">
-          <input id="title" required autoFocus value={title} onChange={(event) => setTitle(event.target.value)} className={inputClass} />
+          <input id="title" required autoFocus maxLength={300} value={title} onChange={(event) => setTitle(event.target.value)} className={inputClass} />
         </Field>
 
         <Field label="Description" htmlFor="description" hint="Optional. The tutor reads this when you ask about the assignment.">

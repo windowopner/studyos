@@ -8,6 +8,8 @@ import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { dueLabel } from '@/lib/dates'
 import PageHeader from '@/components/page-header'
 import { toast } from '@/components/toaster'
+import LoadError from '@/components/load-error'
+import OrbitGlyph from '@/components/orbit-glyph'
 
 type SubjectData = {
   name: string
@@ -64,22 +66,29 @@ export default function TodoPage() {
   const [newTodo, setNewTodo] = useState('')
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'todo' | 'done'>('todo')
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [adding, setAdding] = useState(false)
 
   useEffect(() => {
+    let alive = true
     const load = async () => {
-      const [{ data: assignmentData }, { data: todoData }] = await Promise.all([
+      const [{ data: assignmentData, error: assignmentError }, { data: todoData, error: todoError }] = await Promise.all([
         supabase
           .from('assignments')
           .select('id, title, due_date, status, priority, subjects(name, color)')
           .order('due_date', { ascending: true, nullsFirst: false }),
         supabase.from('todos').select('id, title, done').order('created_at', { ascending: true }),
       ])
+      if (!alive) return
+      setFailed(!!(assignmentError || todoError))
       setItems(((assignmentData || []) as RawAssignmentItem[]).map((item) => ({ ...item, subjects: pickJoined(item.subjects) })))
       setTodos(todoData || [])
       setLoading(false)
     }
     load()
-  }, [])
+    return () => { alive = false }
+  }, [attempt])
 
   const toggleAssignment = async (item: AssignmentItem) => {
     const status = item.status === 'done' ? 'todo' : 'done'
@@ -93,10 +102,12 @@ export default function TodoPage() {
 
   const addTodo = async (event: React.FormEvent) => {
     event.preventDefault()
-    const title = newTodo.trim()
-    if (!title) return
+    const title = newTodo.trim().slice(0, 300)
+    if (!title || adding) return
+    setAdding(true)
     setNewTodo('')
     const { data, error } = await supabase.from('todos').insert({ title }).select('id, title, done').single()
+    setAdding(false)
     if (error || !data) { toast(error?.message || 'Could not add the to-do.', 'error'); setNewTodo(title); return }
     setTodos((list) => [...list, data])
   }
@@ -192,9 +203,10 @@ export default function TodoPage() {
           value={newTodo}
           onChange={(event) => setNewTodo(event.target.value)}
           placeholder="Add a to-do, e.g. Return library book"
+          maxLength={300}
           className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
         />
-        <button type="submit" disabled={!newTodo.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Add</button>
+        <button type="submit" disabled={!newTodo.trim() || adding} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Add</button>
       </form>
 
       <div role="tablist" aria-label="Show" className="mb-6 inline-flex rounded-xl border bg-[var(--surface)] p-1">
@@ -216,9 +228,12 @@ export default function TodoPage() {
 
       {loading ? (
         <div className="space-y-2">{[0, 1, 2, 3].map((row) => <div key={row} className="skeleton h-12 rounded-xl" />)}</div>
+      ) : failed ? (
+        <LoadError message="Your list couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       ) : tab === 'todo' ? (
         openAssignments.length + openTodos.length === 0 ? (
           <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
             <p className="text-sm font-medium text-[var(--text)]">All clear</p>
             <p className="mt-1 text-sm text-[var(--text-muted)]">Nothing left to do. Add something above if you think of it.</p>
           </div>
@@ -232,6 +247,7 @@ export default function TodoPage() {
         )
       ) : totalDone === 0 ? (
         <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
           <p className="text-sm text-[var(--text-muted)]">Finished items will show up here.</p>
         </div>
       ) : (

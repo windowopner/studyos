@@ -7,6 +7,8 @@ import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 import { ArrowRight } from '@phosphor-icons/react'
 import PageHeader from '@/components/page-header'
+import LoadError from '@/components/load-error'
+import OrbitGlyph from '@/components/orbit-glyph'
 
 type SubjectData = {
   name: string
@@ -34,13 +36,18 @@ type RawDeck = Omit<Deck, 'subjects' | 'notes'> & {
 export default function FlashcardsPage() {
   const [decks, setDecks] = useState<Deck[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let alive = true
     supabase
       .from('flashcard_decks')
       .select('*, subjects(name, color), notes(title), flashcards(count)')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (!alive) return
+        setFailed(!!error)
         setDecks(((data || []) as RawDeck[]).map((deck) => ({
           ...deck,
           subjects: pickJoined(deck.subjects),
@@ -48,7 +55,8 @@ export default function FlashcardsPage() {
         })))
         setLoading(false)
       })
-  }, [])
+    return () => { alive = false }
+  }, [attempt])
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -58,8 +66,11 @@ export default function FlashcardsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((card) => <div key={card} className="skeleton h-[150px] rounded-2xl" />)}
         </div>
+      ) : failed ? (
+        <LoadError message="Your decks couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       ) : decks.length === 0 ? (
         <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
           <p className="text-sm font-medium text-[var(--text)]">No decks yet</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-[var(--text-muted)]">
             Open a note and choose Make flashcards. The AI turns it into a deck.

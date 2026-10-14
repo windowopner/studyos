@@ -7,6 +7,7 @@ import { ArrowLeft } from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
 import PageHeader from '@/components/page-header'
 import AssignmentRow, { type AssignmentRowData } from '@/components/assignment-row'
+import { requestJSON } from '@/lib/http'
 
 type Course = { id: string; name: string; section: string | null }
 
@@ -19,13 +20,12 @@ export default function ClassroomCoursePage() {
 
   useEffect(() => {
     const load = async () => {
-      const [response, { data }] = await Promise.all([
-        fetch('/api/classroom-courses'),
+      const [result, { data }] = await Promise.all([
+        requestJSON<{ courses: Course[] }>('/api/classroom-courses'),
         supabase.from('assignments').select('id, title, due_date, status').eq('course_id', courseId).order('due_date', { ascending: true, nullsFirst: false }),
       ])
-      const body = await response.json()
-      if (!response.ok) setError(body.error || 'Could not load Google Classroom.')
-      setCourse(body.courses?.find((item: Course) => item.id === courseId) || null)
+      if (!result.ok) setError(result.error)
+      setCourse(result.ok ? result.data.courses?.find((item) => item.id === courseId) || null : null)
       setAssignments(data || [])
       setLoading(false)
     }

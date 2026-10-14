@@ -89,6 +89,7 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [active, setActive] = useState(0)
+  const [searchFailed, setSearchFailed] = useState(false)
   const hasQuery = query.trim().length > 0
 
   useEffect(() => {
@@ -104,9 +105,19 @@ export default function SearchPage() {
     }
 
     let stale = false
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
+      runSearch().catch(() => {
+        if (stale) return
+        setSearchFailed(true)
+        setLoading(false)
+      })
+    }, 250)
+
+    const runSearch = async () => {
       setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
+      setSearchFailed(false)
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
       if (!user) {
         setLoading(false)
         return
@@ -163,9 +174,10 @@ export default function SearchPage() {
         ...deck,
         subjects: pickJoined(deck.subjects),
       })))
+      setSearchFailed(!!(notesRes.error || assignmentsRes.error || decksRes.error))
       setSearched(true)
       setLoading(false)
-    }, 250)
+    }
 
     return () => { stale = true; clearTimeout(timer) }
   }, [query])
@@ -234,7 +246,11 @@ export default function SearchPage() {
         </p>
       )}
 
-      {hasQuery && searched && !loading && total === 0 && (
+      {hasQuery && searchFailed && !loading && (
+        <p role="alert" className="mt-6 text-center text-sm text-[var(--danger)]">Search didn&apos;t finish. Check your connection and try again.</p>
+      )}
+
+      {hasQuery && searched && !loading && !searchFailed && total === 0 && (
         <div className="empty-card mt-6 rounded-2xl px-6 py-12 text-center">
           <p className="text-sm text-[var(--text-muted)]">No results for &ldquo;{query}&rdquo;</p>
         </div>

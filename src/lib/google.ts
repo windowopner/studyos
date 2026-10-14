@@ -13,18 +13,20 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
 ]
 
+// Resolves false if the redirect to Google couldn't start (offline, Supabase down).
 export async function signInWithGoogle() {
-  await supabase.auth.signInWithOAuth({
+  const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: `${window.location.origin}/auth/callback`,
       queryParams: { prompt: 'select_account' },
     },
   })
+  return !error
 }
 
 export async function connectGoogle(next = '/dashboard/profile') {
-  await supabase.auth.signInWithOAuth({
+  const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: `${window.location.origin}/auth/callback?google=1&next=${encodeURIComponent(next)}`,
@@ -32,6 +34,7 @@ export async function connectGoogle(next = '/dashboard/profile') {
       queryParams: { access_type: 'offline', prompt: 'consent' },
     },
   })
+  return !error
 }
 
 export async function fetchGoogleStatus(): Promise<boolean> {
@@ -45,5 +48,5 @@ export async function fetchGoogleStatus(): Promise<boolean> {
 }
 
 export async function disconnectGoogle() {
-  await fetch('/api/google', { method: 'DELETE' })
+  await fetch('/api/google', { method: 'DELETE' }).catch(() => {})
 }

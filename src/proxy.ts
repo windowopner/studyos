@@ -22,12 +22,16 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
-  const isAuthRoute = pathname.startsWith('/auth')
-  const isLoginPage = pathname === '/login'
 
-  if (!user && !isAuthRoute && !isLoginPage && pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  // Redirects carry over any refreshed session cookies, so a token refresh isn't lost.
+  const redirectTo = (path: string) => {
+    const response = NextResponse.redirect(new URL(path, request.url))
+    supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie))
+    return response
   }
+
+  if (!user && (pathname === '/' || pathname.startsWith('/dashboard'))) return redirectTo('/login')
+  if (user && (pathname === '/' || pathname === '/login')) return redirectTo('/dashboard')
 
   return supabaseResponse
 }

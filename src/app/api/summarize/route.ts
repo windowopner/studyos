@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { askClaude } from '@/lib/ai'
+import { badRequest, readBody, text } from '@/lib/request'
 
 export async function POST(req: Request) {
-  const { content } = await req.json()
+  const body = await readBody(req)
+  const content = text(body?.content, 30000).trim()
+  if (!content) return badRequest('Write something in the note first.')
 
   const result = await askClaude({
     max_tokens: 300,
@@ -13,5 +16,5 @@ export async function POST(req: Request) {
   })
   if (!result.ok) return result.response
 
-  return NextResponse.json({ summary: result.text })
+  return NextResponse.json({ summary: result.text.trim() })
 }

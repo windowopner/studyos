@@ -27,7 +27,8 @@ export default function ProfilePage() {
 
       setEmail(user.email || '')
 
-      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      const { data, error } = await supabase.from('profiles').select('name, avatar_url').eq('id', user.id).maybeSingle()
+      if (error) toast('Your profile couldn’t load. Reload to try again.', 'error')
       if (data) {
         setName(data.name || '')
         setAvatarUrl(data.avatar_url || '')
@@ -39,27 +40,35 @@ export default function ProfilePage() {
 
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
+    event.target.value = ''
     if (!file) return
+
+    const types: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }
+    if (!types[file.type]) { toast('Use a PNG, JPG, WebP, or GIF image.', 'error'); return }
+    if (file.size > 5 * 1024 * 1024) { toast('That image is over 5 MB. Pick a smaller one.', 'error'); return }
 
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setUploading(false)
+      toast('Your session ended. Sign in again.', 'error')
       return
     }
 
-    const ext = file.name.split('.').pop()
-    const path = `avatars/${user.id}.${ext}`
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    const path = `avatars/${user.id}.${types[file.type]}`
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
     if (error) {
       toast(`Upload failed: ${error.message}`, 'error')
       setUploading(false)
       return
     }
 
+    // The ?v= makes browsers fetch the new photo instead of the cached old one at the same path.
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
-    await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id)
-    setAvatarUrl(publicUrl)
+    const url = `${publicUrl}?v=${Date.now()}`
+    const { error: saveError } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id)
+    if (saveError) toast(saveError.message, 'error')
+    else { setAvatarUrl(url); toast('Photo updated.', 'success') }
     setUploading(false)
   }
 
@@ -71,7 +80,7 @@ export default function ProfilePage() {
       return
     }
 
-    const { error } = await supabase.from('profiles').update({ name: name.trim() }).eq('id', user.id)
+    const { error } = await supabase.from('profiles').update({ name: name.trim().slice(0, 80) }).eq('id', user.id)
     setSaving(false)
     if (error) { toast(error.message, 'error'); return }
     setSaved(true)
@@ -99,7 +108,7 @@ export default function ProfilePage() {
               {uploading ? <span className="text-xs">Uploading…</span> : <Camera size={20} />}
             </span>
           </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleAvatarUpload} />
 
           <div className="min-w-0">
             <p className="truncate text-lg font-semibold text-[var(--text)]">{name || 'Your profile'}</p>
@@ -109,13 +118,13 @@ export default function ProfilePage() {
 
         <form onSubmit={(event) => { event.preventDefault(); handleSave() }} className="mt-6 flex flex-col gap-5 border-t pt-6">
           <Field label="Display name" htmlFor="display-name">
-            <input id="display-name" value={name} onChange={(event) => setName(event.target.value)} className={inputClass} />
+            <input id="display-name" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} className={inputClass} />
           </Field>
           <Field label="Email" htmlFor="email" hint="Comes from your Google account.">
             <input id="email" value={email} disabled className={`${inputClass} cursor-not-allowed opacity-60`} />
           </Field>
           <div>
-            <button type="submit" disabled={saving} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+            <button type="submit" disabled={saving || !name.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
               {saved ? <><Check size={16} weight="bold" /> Saved</> : saving ? 'Saving…' : 'Save changes'}
             </button>
           </div>

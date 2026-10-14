@@ -34,7 +34,7 @@ export default function Toaster() {
         <div
           key={item.id}
           role={item.kind === 'error' ? 'alert' : 'status'}
-          className="glass-panel pointer-events-auto flex items-start gap-3 rounded-xl px-4 py-3 shadow-[var(--shadow-pop)] [animation:toast-in_240ms_var(--ease-out)]"
+          className="dialog-panel pointer-events-auto flex items-start gap-3 rounded-xl px-4 py-3 shadow-[var(--shadow-pop)] [animation:toast-in_240ms_var(--ease-out)]"
         >
           {item.kind === 'error' ? (
             <WarningCircle size={18} weight="fill" className="mt-0.5 shrink-0 text-[var(--danger)]" />

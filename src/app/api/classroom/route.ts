@@ -1,69 +1,49 @@
 import { NextResponse } from 'next/server'
-import { requireGoogleToken } from '@/lib/google-server'
+import { googleFailure, requireGoogleToken } from '@/lib/google-server'
 
 type Material = { driveFile?: { driveFile: { id: string; title: string; alternateLink: string } } }
+type CourseWork = {
+  id: string
+  title: string
+  description?: string
+  maxPoints?: number
+  materials?: Material[]
+  dueDate?: { year: number; month: number; day: number }
+}
 
 export async function GET() {
   const google = await requireGoogleToken()
   if (!google.ok) return google.response
-  const accessToken = google.token
+  const headers = { Authorization: `Bearer ${google.token}` }
 
-  const coursesRes = await fetch(
-    'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE',
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  )
-  if (!coursesRes.ok) {
-    // 401: the hour-long token expired. 403: Google or the school's admin refused access.
-    const message = coursesRes.status === 401
-      ? 'Your Google connection expired. Connect Google again in Profile.'
-      : 'Google Classroom refused access. Your school may block third-party apps.'
-    return NextResponse.json({ error: message, code: 'google_refused' }, { status: coursesRes.status === 401 ? 401 : 403 })
-  }
-  const coursesData = await coursesRes.json()
-  const courses = coursesData.courses || []
+  const coursesRes = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=100', { headers, cache: 'no-store' }).catch(() => null)
+  if (!coursesRes) return NextResponse.json({ error: 'Could not reach Google Classroom.' }, { status: 502 })
+  if (!coursesRes.ok) return googleFailure(coursesRes.status, 'Google Classroom did not answer. Try again.')
+  const courses: { id: string; name: string }[] = (await coursesRes.json()).courses || []
 
-  const assignments: object[] = []
+  // One course failing (archived, permissions) shouldn't hide the others.
+  const perCourse = await Promise.all(courses.map(async (course) => {
+    const workRes = await fetch(
+      `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(course.id)}/courseWork?pageSize=100`,
+      { headers, cache: 'no-store' }
+    ).catch(() => null)
+    if (!workRes?.ok) return []
+    const works: CourseWork[] = (await workRes.json()).courseWork || []
+    return works.map((work) => ({
+      classroomId: work.id,
+      courseId: course.id,
+      title: work.title,
+      description: work.description || null,
+      courseName: course.name,
+      max_points: work.maxPoints || null,
+      attachments: (work.materials || [])
+        .filter((m): m is Required<Material> => !!m.driveFile)
+        .map((m) => ({ id: m.driveFile.driveFile.id, title: m.driveFile.driveFile.title, link: m.driveFile.driveFile.alternateLink })),
+      due_date: work.dueDate
+        ? `${work.dueDate.year}-${String(work.dueDate.month).padStart(2, '0')}-${String(work.dueDate.day).padStart(2, '0')}`
+        : null,
+    }))
+  }))
 
-  await Promise.all(
-    courses.map(async (course: { id: string; name: string }) => {
-      const workRes = await fetch(
-        `https://classroom.googleapis.com/v1/courses/${course.id}/courseWork`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      )
-      const workData = await workRes.json()
-      const works = workData.courseWork || []
-
-      works.forEach((work: {
-        id: string
-        title: string
-        description?: string
-        maxPoints?: number
-        materials?: Material[]
-        dueDate?: { year: number; month: number; day: number }
-      }) => {
-        const attachments = (work.materials || [])
-          .filter((m): m is Required<Material> => !!m.driveFile)
-          .map((m) => ({
-            id: m.driveFile.driveFile.id,
-            title: m.driveFile.driveFile.title,
-            link: m.driveFile.driveFile.alternateLink,
-          }))
-
-        assignments.push({
-          classroomId: work.id,
-          courseId: course.id,
-          title: work.title,
-          description: work.description || null,
-          courseName: course.name,
-          max_points: work.maxPoints || null,
-          attachments,
-          due_date: work.dueDate
-            ? `${work.dueDate.year}-${String(work.dueDate.month).padStart(2, '0')}-${String(work.dueDate.day).padStart(2, '0')}`
-            : null,
-        })
-      })
-    })
-  )
-
-  return NextResponse.json({ assignments })
+  return NextResponse.json({ assignments: perCourse.flat() })
 }

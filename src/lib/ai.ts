@@ -37,8 +37,10 @@ export async function askClaude(body: Record<string, unknown>): Promise<ClaudeRe
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({ model: AI_MODEL, ...body }),
+      // Stay inside the route's time limit so the page gets a clear answer instead of a hang.
+      signal: AbortSignal.timeout(55_000),
     })
-    const data = await res.json()
+    const data = await res.json().catch(() => null)
     const text: string | undefined = data?.content?.find((block: { type: string }) => block.type === 'text')?.text
 
     if (!res.ok || !text) {

@@ -9,7 +9,11 @@ import { toast } from '@/components/toaster'
 import PageHeader from '@/components/page-header'
 import { dueLabel } from '@/lib/dates'
 import { useGoogleConnected } from '@/lib/use-google'
-import { CaretRight, DownloadSimple, Plus, Trash, X } from '@phosphor-icons/react'
+import { requestJSON } from '@/lib/http'
+import LoadError from '@/components/load-error'
+import { CaretRight, DownloadSimple, Plus, Trash } from '@phosphor-icons/react'
+import Modal from '@/components/modal'
+import OrbitGlyph from '@/components/orbit-glyph'
 
 type SubjectData = {
   name: string
@@ -35,6 +39,7 @@ type RawAssignment = Omit<Assignment, 'subjects'> & {
 
 type ClassroomAssignment = {
   classroomId: string
+  courseId: string
   title: string
   description: string | null
   courseName: string
@@ -87,47 +92,65 @@ export default function AssignmentsPage() {
   const [classroomList, setClassroomList] = useState<ClassroomAssignment[]>([])
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
+  const [failed, setFailed] = useState(false)
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set())
   const googleConnected = useGoogleConnected()
 
-  const fetchAssignments = () => {
-    supabase
+  const fetchAssignments = async () => {
+    const { data, error } = await supabase
       .from('assignments')
       .select('*, subjects(name, color)')
-      .order('due_date', { ascending: true })
-      .then(({ data }) => {
-        setAssignments(((data || []) as RawAssignment[]).map((assignment) => ({
-          ...assignment,
-          subjects: pickJoined(assignment.subjects),
-        })))
-        setLoading(false)
-      })
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: false })
+    if (error) return null
+    return ((data || []) as RawAssignment[]).map((assignment) => ({
+      ...assignment,
+      subjects: pickJoined(assignment.subjects),
+    }))
+  }
+
+  const reload = async () => {
+    const list = await fetchAssignments()
+    if (list) { setAssignments(list); setFailed(false) } else setFailed(true)
+    setLoading(false)
   }
 
   useEffect(() => {
-    fetchAssignments()
+    let alive = true
+    fetchAssignments().then((list) => {
+      if (!alive) return
+      if (list) setAssignments(list)
+      else setFailed(true)
+      setLoading(false)
+    })
+    return () => { alive = false }
   }, [])
 
   const handleClearAll = async () => {
-    if (!confirm('Delete all assignments? This cannot be undone.')) return
+    if (!confirm(`Delete all ${assignments.length} assignments? This cannot be undone.`)) return
 
     setClearing(true)
     const ids = assignments.map((assignment) => assignment.id)
-    if (ids.length > 0) await supabase.from('assignments').delete().in('id', ids)
-    fetchAssignments()
+    const { error } = ids.length > 0 ? await supabase.from('assignments').delete().in('id', ids) : { error: null }
+    if (error) toast(error.message, 'error')
+    await reload()
     setClearing(false)
   }
 
   const handleFetchClassroom = async () => {
     setFetching(true)
-    const response = await fetch('/api/classroom')
-    const body = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      toast(body.error || 'Could not reach Google Classroom.', 'error')
+    const result = await requestJSON<{ assignments: Omit<ClassroomAssignment, 'selected' | 'isPast' | 'hasDate'>[] }>('/api/classroom')
+    if (!result.ok) {
+      toast(result.error, 'error')
       setFetching(false)
       return
     }
 
-    const raw = body.assignments || []
+    // Anything already imported is left out, so importing twice doesn't make duplicates.
+    const { data: existing } = await supabase.from('assignments').select('classroom_id').not('classroom_id', 'is', null)
+    const already = new Set((existing || []).map((row) => row.classroom_id as string))
+    setImportedIds(already)
+    const raw = (result.data.assignments || []).filter((assignment) => !already.has(assignment.classroomId))
     const today = new Date().toISOString().split('T')[0]
     const list: ClassroomAssignment[] = raw.map((assignment: Omit<ClassroomAssignment, 'selected' | 'isPast' | 'hasDate'>) => {
       const hasDate = !!assignment.due_date
@@ -159,6 +182,7 @@ export default function AssignmentsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setImporting(false)
+      toast('Your session ended. Sign in again.', 'error')
       return
     }
 
@@ -173,7 +197,8 @@ export default function AssignmentsPage() {
         .select('id')
         .eq('name', name)
         .eq('profile_id', user.id)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (existing) {
         subjectMap[name] = existing.id
@@ -190,6 +215,7 @@ export default function AssignmentsPage() {
 
     const today = new Date().toISOString().split('T')[0]
     let imported = 0
+    let failedCount = 0
 
     for (const assignment of selected) {
       let priority = 2
@@ -214,15 +240,18 @@ export default function AssignmentsPage() {
         max_points: assignment.max_points,
         subject_id: subjectMap[assignment.courseName] || null,
         classroom_id: assignment.classroomId,
+        course_id: assignment.courseId,
       })
 
-      if (!error) imported++
+      if (error) failedCount++
+      else imported++
     }
 
     setImporting(false)
     setShowModal(false)
-    toast(`Imported ${imported} assignment${imported === 1 ? '' : 's'}.`, 'success')
-    fetchAssignments()
+    if (failedCount > 0) toast(`Imported ${imported}; ${failedCount} could not be saved.`, 'error')
+    else toast(`Imported ${imported} assignment${imported === 1 ? '' : 's'}.`, 'success')
+    reload()
   }
 
   const upcoming = classroomList.filter((assignment) => assignment.hasDate && !assignment.isPast)
@@ -262,14 +291,14 @@ export default function AssignmentsPage() {
         }
       />
 
-      <div role="tablist" aria-label="Filter by status" className="mb-4 inline-flex rounded-xl border bg-[var(--surface)] p-1">
+      <div role="tablist" aria-label="Filter by status" className="mb-4 inline-flex max-w-full overflow-x-auto rounded-xl border bg-[var(--surface)] p-1">
         {(Object.keys(filterLabel) as Filter[]).map((key) => (
           <button
             key={key}
             role="tab"
             aria-selected={filter === key}
             onClick={() => setFilter(key)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
+            className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
               filter === key
                 ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]'
                 : 'text-[var(--text-muted)] hover:text-[var(--text)]'
@@ -285,8 +314,11 @@ export default function AssignmentsPage() {
         <div className="space-y-2">
           {[0, 1, 2, 3].map((row) => <div key={row} className="skeleton h-[72px] rounded-2xl" />)}
         </div>
+      ) : failed ? (
+        <LoadError message="Your assignments couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); reload() }} />
       ) : visible.length === 0 ? (
         <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
           <p className="text-sm font-medium text-[var(--text)]">
             {assignments.length === 0 ? 'No assignments yet' : `Nothing ${filterLabel[filter].toLowerCase()}`}
           </p>
@@ -338,7 +370,7 @@ export default function AssignmentsPage() {
         </ul>
       )}
 
-      {assignments.length > 0 && (
+      {!failed && assignments.length > 0 && (
         <div className="mt-6 flex justify-end">
           <button
             onClick={handleClearAll}
@@ -352,12 +384,8 @@ export default function AssignmentsPage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]">
-          <div className="glass-panel flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl p-6">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h2 className="text-lg font-semibold text-[var(--text)]">Import from Classroom</h2>
-              <button onClick={() => setShowModal(false)} aria-label="Close" className="ghost-button rounded-lg p-1.5 hover:bg-[var(--surface-hover)]"><X size={18} /></button>
-            </div>
+        <Modal title="Import from Classroom" description="Already-imported assignments are left out." size="lg" busy={importing} onClose={() => setShowModal(false)}>
+          <div className="flex h-full max-h-[calc(85dvh-8rem)] flex-col">
 
             <div className="mb-4 flex flex-wrap gap-2">
               <button onClick={() => selectGroup('upcoming')} className="secondary-button rounded-full px-3 py-1.5 text-xs font-medium">Upcoming ({upcoming.length})</button>
@@ -367,7 +395,12 @@ export default function AssignmentsPage() {
               <button onClick={() => selectGroup('none')} className="secondary-button rounded-full px-3 py-1.5 text-xs font-medium">None</button>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+            {classroomList.length === 0 && (
+              <p className="rounded-xl bg-[var(--surface-soft)] px-4 py-6 text-center text-sm text-[var(--text-muted)]">
+                {importedIds.size > 0 ? 'Everything in Classroom is already imported.' : 'No assignments found in your Classroom courses.'}
+              </p>
+            )}
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
               <SelectionGroup
                 title="Upcoming"
                 items={upcoming}
@@ -386,13 +419,13 @@ export default function AssignmentsPage() {
               />
             </div>
 
-            <div className="mt-5 flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-xs text-[var(--text-muted)]">
                 {classroomList.filter((assignment) => assignment.selected).length} selected
               </span>
 
               <div className="flex gap-2">
-                <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-3 text-sm font-medium">
+                <button onClick={() => setShowModal(false)} disabled={importing} className="secondary-button rounded-xl px-4 py-3 text-sm font-medium">
                   Cancel
                 </button>
                 <button
@@ -400,12 +433,12 @@ export default function AssignmentsPage() {
                   disabled={importing || classroomList.filter((assignment) => assignment.selected).length === 0}
                   className="primary-button rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
                 >
-                  {importing ? 'Importing...' : 'Import'}
+                  {importing ? 'Importing…' : 'Import'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

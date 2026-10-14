@@ -1,22 +1,16 @@
 import { NextResponse } from 'next/server'
-import { requireGoogleToken } from '@/lib/google-server'
+import { googleFailure, requireGoogleToken } from '@/lib/google-server'
 
 export async function GET() {
   const google = await requireGoogleToken()
   if (!google.ok) return google.response
-  const accessToken = google.token
 
-  const res = await fetch(
-    'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE',
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  )
-  if (!res.ok) {
-    // 401: the hour-long token expired. 403: Google or the school's admin refused access.
-    const message = res.status === 401
-      ? 'Your Google connection expired. Connect Google again in Profile.'
-      : 'Google Classroom refused access. Your school may block third-party apps.'
-    return NextResponse.json({ error: message, code: 'google_refused' }, { status: res.status === 401 ? 401 : 403 })
-  }
+  const res = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=100', {
+    headers: { Authorization: `Bearer ${google.token}` },
+    cache: 'no-store',
+  }).catch(() => null)
+  if (!res) return NextResponse.json({ error: 'Could not reach Google Classroom.' }, { status: 502 })
+  if (!res.ok) return googleFailure(res.status, 'Google Classroom did not answer. Try again.')
   const data = await res.json()
 
   const courses = (data.courses || []).map((c: { id: string; name: string; section?: string; subject?: string; description?: string }) => ({

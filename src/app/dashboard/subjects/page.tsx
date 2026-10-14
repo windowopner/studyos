@@ -9,6 +9,9 @@ import { useGoogleConnected } from '@/lib/use-google'
 import { SUBJECT_COLORS } from '@/lib/subjects'
 import PageHeader from '@/components/page-header'
 import { toast } from '@/components/toaster'
+import { requestJSON } from '@/lib/http'
+import LoadError from '@/components/load-error'
+import OrbitGlyph from '@/components/orbit-glyph'
 
 type Subject = {
   id: string
@@ -31,23 +34,29 @@ export default function SubjectsPage() {
   const [color, setColor] = useState(SUBJECT_COLORS[0])
   const [adding, setAdding] = useState(false)
   const [courses, setCourses] = useState<Course[] | null>(null)
+  const [failed, setFailed] = useState(false)
   const googleConnected = useGoogleConnected()
 
   const fetchSubjects = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('subjects')
       .select('id, name, color, assignments(count), notes(count)')
       .order('name')
-    return (data || []) as Subject[]
+    return error ? null : (data || []) as Subject[]
   }
 
-  const load = () => fetchSubjects().then((list) => { setSubjects(list); setLoading(false) })
+  const load = () => fetchSubjects().then((list) => {
+    if (list) setSubjects(list)
+    setFailed(!list)
+    setLoading(false)
+  })
 
   useEffect(() => {
     let alive = true
     fetchSubjects().then((list) => {
       if (!alive) return
-      setSubjects(list)
+      if (list) setSubjects(list)
+      setFailed(!list)
       setLoading(false)
     })
     return () => { alive = false }
@@ -56,21 +65,23 @@ export default function SubjectsPage() {
   // Classroom courses are an extra section, only when Google is connected.
   useEffect(() => {
     if (!googleConnected) return
-    fetch('/api/classroom-courses')
-      .then(async (response) => {
-        const body = await response.json()
-        if (!response.ok) { toast(body.error || 'Could not load Classroom courses.', 'error'); return }
-        setCourses(body.courses || [])
-      })
+    requestJSON<{ courses: Course[] }>('/api/classroom-courses').then((result) => {
+      if (!result.ok) { toast(result.error, 'error'); return }
+      setCourses(result.data.courses || [])
+    })
   }, [googleConnected])
 
   const addSubject = async (event: React.FormEvent) => {
     event.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
+    if (subjects.some((subject) => subject.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast(`You already have a subject called ${trimmed}.`, 'error')
+      return
+    }
     setAdding(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setAdding(false); return }
+    if (!user) { setAdding(false); toast('Your session ended. Sign in again.', 'error'); return }
     const { error } = await supabase.from('subjects').insert({ profile_id: user.id, name: trimmed, color })
     setAdding(false)
     if (error) { toast(error.message, 'error'); return }
@@ -97,6 +108,7 @@ export default function SubjectsPage() {
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="New subject, e.g. Chemistry"
+          maxLength={80}
           className="field-input min-w-0 flex-1 rounded-xl px-3.5 py-2.5 text-sm"
         />
         <div role="radiogroup" aria-label="Color" className="flex items-center gap-1.5">
@@ -123,8 +135,11 @@ export default function SubjectsPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((card) => <div key={card} className="skeleton h-[96px] rounded-2xl" />)}
         </div>
+      ) : failed ? (
+        <LoadError message="Your subjects couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); load() }} />
       ) : subjects.length === 0 ? (
         <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
           <p className="text-sm font-medium text-[var(--text)]">No subjects yet</p>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Add your classes above, then pick one when you write a note or an assignment.</p>
         </div>

@@ -27,6 +27,7 @@ import { supabase } from '@/lib/supabase'
 import { disconnectGoogle } from '@/lib/google'
 import Toaster from '@/components/toaster'
 import Avatar from '@/components/avatar'
+import Brand from '@/components/brand'
 
 type Profile = {
   name: string | null
@@ -70,13 +71,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .from('profiles')
         .select('name, avatar_url')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
-      setProfile(data)
+      setProfile(data ?? {
+        name: (user.user_metadata?.full_name as string | undefined) ?? null,
+        avatar_url: (user.user_metadata?.avatar_url as string | undefined) ?? null,
+      })
     }
 
     loadProfile()
-  }, [])
+
+    // Signed out in another tab, or the session expired: go to the sign-in page instead of
+    // leaving pages that quietly fail to load.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') router.replace('/login')
+    })
+    return () => subscription.unsubscribe()
+  }, [router])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -103,22 +114,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return pathname.startsWith(href)
   }
 
+  const [signingOut, setSigningOut] = useState(false)
   const handleLogout = async () => {
+    setSigningOut(true)
     await disconnectGoogle()
-    await supabase.auth.signOut()
-    router.push('/login')
+    await supabase.auth.signOut().catch(() => {})
+    router.replace('/login')
+    router.refresh()
   }
 
   const isDark = mounted && resolvedTheme === 'dark'
 
   const sidebar = (
     <>
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-2 py-1">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--on-accent)]">
-          S
-        </span>
-        <span className="text-[15px] font-semibold tracking-tight text-[var(--text)]">StudyOS</span>
-      </Link>
+      <div className="px-1">
+        <Brand />
+      </div>
 
       <nav className="mt-6 flex-1 space-y-0.5 overflow-y-auto">
         {navItems.map(({ href, label, icon: NavIcon }) => {
@@ -135,7 +146,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
               }`}
             >
-              {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[var(--accent)]" />}
+              {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[var(--accent)] shadow-[0_0_10px_rgb(var(--accent-rgb)/0.7)]" />}
               <NavIcon
                 size={18}
                 weight={active ? 'fill' : 'regular'}
@@ -170,7 +181,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
 
           {showMenu && (
-            <div className="glass-panel absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-20 rounded-xl p-1 shadow-[var(--shadow-pop)]">
+            <div className="dialog-panel absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-20 rounded-xl p-1">
               <Link
                 href="/dashboard/profile"
                 onClick={() => { setShowMenu(false); setMobileNav(false) }}
@@ -181,10 +192,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
               <button
                 onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                disabled={signingOut}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-[var(--danger)] hover:bg-[var(--surface-hover)] disabled:opacity-50"
               >
                 <SignOut size={16} />
-                Sign out
+                {signingOut ? 'Signing out…' : 'Sign out'}
               </button>
             </div>
           )}
@@ -196,16 +208,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-[100dvh] lg:flex">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r bg-[var(--surface)] px-3 py-5 lg:flex">
+      <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r bg-[var(--surface)] px-3 py-5 backdrop-blur-md lg:flex">
         {sidebar}
       </aside>
 
       {/* Mobile top bar and drawer */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b bg-[var(--surface-strong)] px-4 py-3 backdrop-blur lg:hidden">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] text-xs font-semibold text-[var(--on-accent)]">S</span>
-          <span className="text-sm font-semibold text-[var(--text)]">StudyOS</span>
-        </Link>
+        <Brand compact />
         <button
           onClick={() => setMobileNav(true)}
           aria-label="Open menu"
@@ -216,8 +225,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
       {mobileNav && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <button aria-label="Close menu" className="absolute inset-0 bg-black/30" onClick={() => setMobileNav(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-64 flex-col bg-[var(--surface)] px-3 py-5 shadow-[var(--shadow-pop)]">
+          <button aria-label="Close menu" className="absolute inset-0 bg-black/40 backdrop-blur-[2px] [animation:fade-in_200ms_ease]" onClick={() => setMobileNav(false)} />
+          <aside role="dialog" aria-modal="true" aria-label="Menu" className="absolute inset-y-0 left-0 flex w-64 flex-col border-r bg-[var(--background)] px-3 py-5 shadow-[var(--shadow-pop)] [animation:drawer-in_260ms_var(--ease-out)]">
             <button
               onClick={() => setMobileNav(false)}
               aria-label="Close menu"

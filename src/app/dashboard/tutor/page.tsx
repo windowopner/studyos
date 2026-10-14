@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { requestJSON } from '@/lib/http'
+import { toast } from '@/components/toaster'
 import { ArrowUp, ChatCircleText, Plus, WarningCircle, X } from '@phosphor-icons/react'
 
 type Message = { role: 'user' | 'assistant'; content: string }
@@ -58,16 +60,18 @@ function TutorContent() {
       .limit(20)
       .then(({ data }) => setChats(data || []))
 
-    fetch('/api/ai-status').then((response) => response.json()).then((data) => setAiConfigured(!!data.configured)).catch(() => {})
+    requestJSON<{ configured: boolean }>('/api/ai-status').then((result) => { if (result.ok) setAiConfigured(!!result.data.configured) })
   }, [])
 
   const loadChat = (chat: Chat) => {
+    if (loading) return
     setCurrentChatId(chat.id)
-    setMessages(chat.messages.filter((message) => typeof message.content === 'string'))
+    setMessages((Array.isArray(chat.messages) ? chat.messages : []).filter((message) => typeof message?.content === 'string'))
     setError('')
   }
 
   const newChat = () => {
+    if (loading) return
     setCurrentChatId(null)
     setMessages([])
     setError('')
@@ -77,7 +81,9 @@ function TutorContent() {
 
   const deleteChat = async (chatId: string, event: React.MouseEvent) => {
     event.stopPropagation()
-    await supabase.from('ai_chats').delete().eq('id', chatId)
+    if (!confirm('Delete this chat?')) return
+    const { error } = await supabase.from('ai_chats').delete().eq('id', chatId)
+    if (error) { toast(error.message, 'error'); return }
     if (currentChatId === chatId) newChat()
     loadChats()
   }
@@ -98,30 +104,28 @@ function TutorContent() {
     setError('')
     setLoading(true)
 
-    const response = await fetch('/api/tutor', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: newMessages, assignment, note }),
-    })
-    const data = await response.json().catch(() => ({}))
+    const result = await requestJSON<{ reply: string }>('/api/tutor', { body: { messages: newMessages, assignment, note } })
     setLoading(false)
 
-    // On failure the question stays on screen, but nothing is saved to the chat history.
-    if (!response.ok || !data.reply) {
-      setError(data.error || 'The tutor could not answer. Try again.')
+    // On failure the question goes back into the box so it isn't lost, and nothing is saved.
+    if (!result.ok || !result.data.reply) {
+      setError(result.ok ? 'The tutor could not answer. Try again.' : result.error)
+      setMessages(messages)
+      setInput(text)
       return
     }
 
-    const updatedMessages = [...newMessages, { role: 'assistant' as const, content: data.reply }]
+    const updatedMessages = [...newMessages, { role: 'assistant' as const, content: result.data.reply }]
     setMessages(updatedMessages)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     if (currentChatId) {
-      await supabase.from('ai_chats').update({ messages: updatedMessages }).eq('id', currentChatId)
+      const { error: saveError } = await supabase.from('ai_chats').update({ messages: updatedMessages }).eq('id', currentChatId)
+      if (saveError) toast('The answer is shown but could not be saved to your history.', 'error')
     } else {
-      const { data: chat } = await supabase
+      const { data: chat, error: saveError } = await supabase
         .from('ai_chats')
         .insert({
           profile_id: user.id,
@@ -134,13 +138,14 @@ function TutorContent() {
         .single()
 
       if (chat) setCurrentChatId(chat.id)
+      if (saveError) toast('The answer is shown but could not be saved to your history.', 'error')
     }
 
     loadChats()
   }
 
   return (
-    <div className="grid gap-4 lg:h-[calc(100dvh-5rem)] lg:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:h-[calc(100dvh-6.5rem)] lg:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="flex min-h-0 flex-col">
         <button onClick={newChat} className="secondary-button w-full rounded-xl px-4 py-2 text-sm font-medium">
           <Plus size={16} />

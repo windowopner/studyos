@@ -21,3 +21,20 @@ export async function requireGoogleToken(): Promise<TokenResult> {
   }
   return { ok: true, token }
 }
+
+// The same two failures every Google call can hit, explained the same way.
+export function googleFailure(status: number, fallback: string) {
+  if (status === 401) {
+    return NextResponse.json(
+      { error: 'Your Google connection expired. Connect Google again in Profile.', code: 'google_refused' },
+      { status: 401 }
+    )
+  }
+  if (status === 403) {
+    return NextResponse.json(
+      { error: 'Google refused access. Your school may block third-party apps.', code: 'google_refused' },
+      { status: 403 }
+    )
+  }
+  return NextResponse.json({ error: fallback }, { status: 502 })
+}

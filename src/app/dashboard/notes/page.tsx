@@ -8,6 +8,8 @@ import { spotlightProps } from '@/lib/spotlight'
 import { Plus } from '@phosphor-icons/react'
 import PageHeader from '@/components/page-header'
 import { plainText } from '@/lib/text'
+import LoadError from '@/components/load-error'
+import OrbitGlyph from '@/components/orbit-glyph'
 
 type SubjectData = {
   name: string
@@ -33,23 +35,29 @@ export default function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [subjectFilter, setSubjectFilter] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let alive = true
     const fetchNotes = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('notes')
         .select('id, title, ai_summary, tags, updated_at, subjects(name, color)')
         .order('updated_at', { ascending: false })
-
+      if (!alive) return
+      setFailed(!!error)
       setNotes(((data || []) as RawNote[]).map((note) => ({
         ...note,
+        tags: note.tags || [],
         subjects: pickJoined(note.subjects),
       })))
       setLoading(false)
     }
 
     fetchNotes()
-  }, [])
+    return () => { alive = false }
+  }, [attempt])
 
   const subjectNames = Array.from(new Set(notes.map((note) => note.subjects?.name).filter(Boolean))) as string[]
   const visible = subjectFilter ? notes.filter((note) => note.subjects?.name === subjectFilter) : notes
@@ -73,6 +81,7 @@ export default function NotesPage() {
             <button
               key={name ?? 'all'}
               onClick={() => setSubjectFilter(name)}
+              aria-pressed={subjectFilter === name}
               className={`rounded-full border px-3 py-1 text-sm ${
                 subjectFilter === name
                   ? 'border-[var(--text)] bg-[var(--text)] text-[var(--background)]'
@@ -89,8 +98,11 @@ export default function NotesPage() {
         <div className="grid gap-3 md:grid-cols-2">
           {[0, 1, 2, 3].map((card) => <div key={card} className="skeleton h-[132px] rounded-2xl" />)}
         </div>
+      ) : failed ? (
+        <LoadError message="Your notes couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       ) : notes.length === 0 ? (
         <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <OrbitGlyph />
           <p className="text-sm font-medium text-[var(--text)]">No notes yet</p>
           <p className="mt-1 text-sm text-[var(--text-muted)]">Notes you write show up here, newest first.</p>
         </div>

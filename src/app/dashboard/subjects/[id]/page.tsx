@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { spotlightProps } from '@/lib/spotlight'
 import PageHeader from '@/components/page-header'
 import AssignmentRow, { type AssignmentRowData } from '@/components/assignment-row'
+import LoadError from '@/components/load-error'
 
 type Subject = { id: string; name: string; color: string }
 type Note = { id: string; title: string; updated_at: string }
@@ -18,21 +19,27 @@ export default function SubjectPage() {
   const [assignments, setAssignments] = useState<AssignmentRowData[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let alive = true
     const load = async () => {
-      const [{ data: subjectData }, { data: assignmentData }, { data: noteData }] = await Promise.all([
+      const [{ data: subjectData, error }, { data: assignmentData }, { data: noteData }] = await Promise.all([
         supabase.from('subjects').select('id, name, color').eq('id', id).maybeSingle(),
         supabase.from('assignments').select('id, title, due_date, status').eq('subject_id', id).order('due_date', { ascending: true, nullsFirst: false }),
         supabase.from('notes').select('id, title, updated_at').eq('subject_id', id).order('updated_at', { ascending: false }),
       ])
+      if (!alive) return
+      setFailed(!!error && error.code !== '22P02')
       setSubject(subjectData)
       setAssignments(assignmentData || [])
       setNotes(noteData || [])
       setLoading(false)
     }
     load()
-  }, [id])
+    return () => { alive = false }
+  }, [id, attempt])
 
   const back = (
     <Link href="/dashboard/subjects" className="group inline-flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
@@ -47,6 +54,15 @@ export default function SubjectPage() {
         <div className="skeleton h-4 w-24" />
         <div className="skeleton h-9 w-1/3" />
         <div className="skeleton h-40 rounded-2xl" />
+      </div>
+    )
+  }
+
+  if (failed) {
+    return (
+      <div className="mx-auto max-w-4xl">
+        <PageHeader back={back} title="Subject" />
+        <LoadError onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       </div>
     )
   }

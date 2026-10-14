@@ -1,9 +1,11 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Cards, ChatCircleText, ClipboardText, GoogleLogo, NotePencil, type Icon } from '@phosphor-icons/react'
 import { signInWithGoogle } from '@/lib/google'
+import OrbitScene from '@/components/orbit-scene'
+import Brand from '@/components/brand'
 
 const features: { icon: Icon; title: string; text: string }[] = [
   { icon: ClipboardText, title: 'Assignments', text: 'Deadlines in one list, overdue work first.' },
@@ -15,14 +17,25 @@ const features: { icon: Icon; title: string; text: string }[] = [
 function SignInButton() {
   const params = useSearchParams()
   const [pending, setPending] = useState(false)
+  const [startFailed, setStartFailed] = useState(false)
   const failed = params.get('error')
+
+  // Coming back from Google with the browser's Back button restores this page from cache;
+  // without this the button would stay stuck on "Opening Google…".
+  useEffect(() => {
+    const onShow = (event: PageTransitionEvent) => { if (event.persisted) setPending(false) }
+    window.addEventListener('pageshow', onShow)
+    return () => window.removeEventListener('pageshow', onShow)
+  }, [])
 
   return (
     <>
       <button
         onClick={async () => {
           setPending(true)
-          await signInWithGoogle()
+          setStartFailed(false)
+          const ok = await signInWithGoogle()
+          if (!ok) { setPending(false); setStartFailed(true) }
         }}
         disabled={pending}
         className="primary-button w-full rounded-xl px-5 py-3 text-sm font-medium"
@@ -30,7 +43,7 @@ function SignInButton() {
         <GoogleLogo size={18} weight="bold" />
         {pending ? 'Opening Google…' : 'Continue with Google'}
       </button>
-      {failed && (
+      {(failed || startFailed) && (
         <p role="alert" className="mt-3 text-sm text-[var(--danger)]">
           Sign-in didn&apos;t finish. Please try again.
         </p>
@@ -41,18 +54,13 @@ function SignInButton() {
 
 export default function LoginPage() {
   return (
-    <div className="grid min-h-[100dvh] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <section className="flex flex-col justify-between px-6 py-8 sm:px-12 lg:py-12">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--on-accent)]">
-            S
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--text)]">StudyOS</span>
-        </div>
+    <div className="grid min-h-[100dvh] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <section className="order-2 flex flex-col justify-between px-6 py-8 sm:px-12 lg:order-1 lg:py-12">
+        <Brand href="/login" />
 
-        <div className="my-16 max-w-sm">
-          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-[var(--text)]">
-            Your schoolwork, in one place.
+        <div className="my-12 max-w-sm lg:my-16">
+          <h1 className="text-4xl font-semibold leading-[1.08] tracking-tight text-[var(--text)] sm:text-[44px]">
+            Your schoolwork, in one orbit.
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-[var(--text-muted)]">
             Assignments, notes, flashcards, and an AI tutor that knows what you&apos;re working on.
@@ -67,18 +75,27 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <span aria-hidden />
+        <ul className="grid max-w-md grid-cols-2 gap-x-6 gap-y-5 lg:hidden">
+          {features.map(({ icon: FeatureIcon, title, text }) => (
+            <li key={title}>
+              <FeatureIcon size={18} className="text-[var(--accent)]" />
+              <p className="mt-2 text-sm font-medium text-[var(--text)]">{title}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">{text}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="hidden border-l bg-[var(--surface)] lg:flex lg:items-center lg:justify-center lg:px-12">
-        <ul className="grid w-full max-w-lg grid-cols-2 gap-x-8 gap-y-10">
+      <section className="space-panel order-1 h-[300px] border-0 sm:h-[380px] lg:order-2 lg:h-auto lg:border-l">
+        <div className="absolute inset-0">
+          <OrbitScene particles={3200} planetScale={0.16} stars={220} />
+        </div>
+        <ul className="pointer-events-none absolute inset-x-0 bottom-0 hidden grid-cols-4 gap-3 p-8 lg:grid">
           {features.map(({ icon: FeatureIcon, title, text }) => (
-            <li key={title} className="group">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl border bg-[var(--background)] text-[var(--accent)] transition-transform duration-300 group-hover:-translate-y-0.5">
-                <FeatureIcon size={20} />
-              </span>
-              <p className="mt-4 text-sm font-medium text-[var(--text)]">{title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">{text}</p>
+            <li key={title} className="rounded-xl border bg-[var(--surface)] p-4 backdrop-blur-md">
+              <FeatureIcon size={18} className="text-[var(--accent)]" />
+              <p className="mt-3 text-sm font-medium">{title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">{text}</p>
             </li>
           ))}
         </ul>

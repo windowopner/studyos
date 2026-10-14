@@ -23,15 +23,12 @@ Signing in with Google only shares name and email. Google Classroom, Docs, and S
 
 ## Database
 
-Tables live in the Supabase project; changes made from this repo are in `supabase/migrations/` (the original tables predate it). Every personal table (`assignments`, `notes`, `subjects`, `todos`, `flashcard_decks`, `ai_chats`, ...) is limited to its owner by row-level security.
+Tables live in the Supabase project; changes made from this repo are in `supabase/migrations/` (the original tables predate it). Every personal table (`assignments`, `notes`, `subjects`, `todos`, `flashcard_decks`, `ai_chats`, ...) is limited to its owner by row-level security. The anonymous role can't read anything except one table for the keep-alive ping, and profiles can't promote themselves to admin.
 
 A GitHub Action (`.github/workflows/keep-alive.yml`) reads one row every three days so the free Supabase project doesn't pause.
 
-### Known issue: study room permissions
+### Study rooms
 
-The community tables still trust the browser:
+Rooms don't trust the browser. Passwords are stored as bcrypt hashes and checked in the database; reads of messages, members, polls, reactions, and votes are limited to room members; and joining, pinning, roles, kicks, and deleting go through `SECURITY DEFINER` functions that check the caller's role (`supabase/migrations/20261014000300_community_rooms.sql`).
 
-- Room passwords are stored in plain text and every signed-in user can read them; the check happens client-side.
-- `room_members`, `room_polls`, and `message_reactions` allow any signed-in user to change any row, so a member could make themselves owner or undo a kick.
-
-Fixing this means hashing passwords and joining through a database function, and limiting membership changes to owners and moderators.
+New tables need explicit `grant`s to `authenticated`: this project doesn't grant them automatically.

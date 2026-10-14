@@ -9,6 +9,10 @@ import { ArrowLeft, Cards, ChatCircleText, Minus, PencilSimple, Plus, Trash } fr
 import PageHeader from '@/components/page-header'
 import { toast } from '@/components/toaster'
 import { plainText } from '@/lib/text'
+import { requestJSON } from '@/lib/http'
+import { useUnsavedWarning } from '@/lib/use-unsaved-warning'
+import Modal from '@/components/modal'
+import LoadError from '@/components/load-error'
 
 type SubjectData = {
   name: string
@@ -44,42 +48,59 @@ export default function NotePage() {
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [editTags, setEditTags] = useState('')
+  const [editSubject, setEditSubject] = useState('')
+  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([])
   const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+
+  const dirty = editing && !!note && (
+    editTitle !== note.title || editContent !== (note.content || '') || editTags !== note.tags.join(', ') || editSubject !== (note.subject_id || '')
+  )
+  useUnsavedWarning(dirty)
 
   useEffect(() => {
+    let alive = true
     supabase
       .from('notes')
       .select('*, subjects(name, color)')
       .eq('id', id)
-      .single()
-      .then(({ data }) => {
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error && error.code !== '22P02') { setFailed(true); setLoading(false); return }
+        setFailed(false)
         setNote(data ? {
           ...(data as RawNote),
           subjects: pickJoined((data as RawNote).subjects),
         } : null)
         setLoading(false)
       })
-  }, [id])
+    return () => { alive = false }
+  }, [id, attempt])
 
   const handleEdit = () => {
     if (!note) return
     setEditTitle(note.title)
-    setEditContent(note.content)
+    setEditContent(note.content || '')
     setEditTags(note.tags.join(', '))
+    setEditSubject(note.subject_id || '')
     setEditing(true)
+    supabase.from('subjects').select('id, name').order('name').then(({ data }) => setSubjects(data || []))
   }
 
   const handleCancel = () => {
+    if (dirty && !confirm('Discard your changes?')) return
     setEditing(false)
   }
 
   const handleSave = async () => {
     if (!note || !editTitle.trim()) return
     setSaving(true)
-    const tags = editTags.split(',').map(t => t.trim()).filter(Boolean)
+    const tags = [...new Set(editTags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean))].slice(0, 20)
     const { data, error } = await supabase
       .from('notes')
-      .update({ title: editTitle.trim(), content: editContent, tags })
+      .update({ title: editTitle.trim(), content: editContent, tags, subject_id: editSubject || null, updated_at: new Date().toISOString() })
       .eq('id', note.id)
       .select('*, subjects(name, color)')
       .single()
@@ -94,9 +115,11 @@ export default function NotePage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Delete this note? This cannot be undone.')) return
+    if (!note || !confirm('Delete this note? Flashcard decks made from it are deleted too. This cannot be undone.')) return
     setDeleting(true)
-    await supabase.from('notes').delete().eq('id', id)
+    const { error } = await supabase.from('notes').delete().eq('id', note.id)
+    if (error) { toast(error.message, 'error'); setDeleting(false); return }
+    toast('Note deleted.', 'success')
     router.push('/dashboard/notes')
   }
 
@@ -105,41 +128,41 @@ export default function NotePage() {
     setShowModal(false)
     setGenerating(true)
 
-    const res = await fetch('/api/flashcards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: note.content, title: note.title, count: cardCount }),
+    const result = await requestJSON<{ cards: { front: string; back: string }[] }>('/api/flashcards', {
+      body: { content: note.content, title: note.title, count: cardCount },
     })
-
-    const body = await res.json()
-    if (!res.ok || !Array.isArray(body.cards)) {
-      toast(body.error || 'Could not make flashcards.', 'error')
+    if (!result.ok || !Array.isArray(result.data.cards) || result.data.cards.length === 0) {
+      toast(result.ok ? 'Could not make flashcards.' : result.error, 'error')
       setGenerating(false)
       return
     }
-    const cards: { front: string; back: string }[] = body.cards
+    const cards = result.data.cards
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setGenerating(false); return }
+    if (!user) { setGenerating(false); toast('Your session ended. Sign in again.', 'error'); return }
 
-    const { data: deck } = await supabase.from('flashcard_decks').insert({
+    const { data: deck, error: deckError } = await supabase.from('flashcard_decks').insert({
       profile_id: user.id,
       note_id: note.id,
       subject_id: note.subject_id || null,
       title: note.title,
-    }).select().single()
-
-    if (deck) {
-      await supabase.from('flashcards').insert(
-        cards.map((c) => ({
-          deck_id: deck.id,
-          front: c.front,
-          back: c.back,
-        }))
-      )
-      router.push(`/dashboard/flashcards/${deck.id}`)
+    }).select('id').single()
+    if (deckError || !deck) {
+      toast(deckError?.message || 'Could not save the deck.', 'error')
+      setGenerating(false)
+      return
     }
 
-    setGenerating(false)
+    const { error: cardsError } = await supabase.from('flashcards').insert(
+      cards.map((c) => ({ deck_id: deck.id, front: c.front, back: c.back }))
+    )
+    if (cardsError) {
+      // Don't leave an empty deck behind.
+      await supabase.from('flashcard_decks').delete().eq('id', deck.id)
+      toast(cardsError.message, 'error')
+      setGenerating(false)
+      return
+    }
+    router.push(`/dashboard/flashcards/${deck.id}`)
   }
 
   if (loading) {
@@ -148,6 +171,13 @@ export default function NotePage() {
         <div className="skeleton h-4 w-24" />
         <div className="skeleton h-9 w-1/2" />
         <div className="skeleton h-64 rounded-2xl" />
+      </div>
+    )
+  }
+  if (failed) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <LoadError message="This note couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       </div>
     )
   }
@@ -224,12 +254,28 @@ export default function NotePage() {
             <label htmlFor="edit-title" className="sr-only">Title</label>
             <input
               id="edit-title"
+              maxLength={300}
               value={editTitle}
               onChange={(event) => setEditTitle(event.target.value)}
               className="w-full bg-transparent text-xl font-semibold text-[var(--text)] outline-none"
             />
-            <label htmlFor="edit-tags" className="mt-4 block text-xs font-medium text-[var(--text-muted)]">Tags, separated by commas</label>
-            <input id="edit-tags" value={editTags} onChange={(event) => setEditTags(event.target.value)} className="field-input mt-1.5 w-full rounded-lg px-3 py-2 text-sm" />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="edit-subject" className="text-xs font-medium text-[var(--text-muted)]">Subject</label>
+                <select id="edit-subject" value={editSubject} onChange={(event) => setEditSubject(event.target.value)} className="field-input rounded-lg px-3 py-2 text-sm">
+                  <option value="">No subject</option>
+                  {/* Keep the current subject listed even before the list loads. */}
+                  {note.subject_id && !subjects.some((subject) => subject.id === note.subject_id) && note.subjects && (
+                    <option value={note.subject_id}>{note.subjects.name}</option>
+                  )}
+                  {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="edit-tags" className="text-xs font-medium text-[var(--text-muted)]">Tags, separated by commas</label>
+                <input id="edit-tags" value={editTags} onChange={(event) => setEditTags(event.target.value)} className="field-input rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
           </div>
           <label htmlFor="edit-content" className="sr-only">Note</label>
           <textarea
@@ -270,26 +316,22 @@ export default function NotePage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]" onClick={() => setShowModal(false)}>
-          <div className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-[var(--shadow-pop)]" onClick={(event) => event.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-[var(--text)]">Make flashcards</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">The AI turns this note into a new deck.</p>
-            <p className="mt-5 text-sm text-[var(--text-muted)]">Number of cards</p>
-            <div className="mt-2 flex items-center gap-3">
-              <button onClick={() => setCardCount((previous) => Math.max(1, previous - 1))} aria-label="Fewer cards" className="secondary-button h-9 w-9 rounded-lg">
-                <Minus size={14} />
-              </button>
-              <span className="w-8 text-center font-mono text-lg text-[var(--text)]">{cardCount}</span>
-              <button onClick={() => setCardCount((previous) => Math.min(20, previous + 1))} aria-label="More cards" className="secondary-button h-9 w-9 rounded-lg">
-                <Plus size={14} />
-              </button>
-            </div>
-            <div className="mt-6 grid grid-cols-2 gap-2">
-              <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</button>
-              <button onClick={handleGenerateFlashcards} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Make deck</button>
-            </div>
+        <Modal title="Make flashcards" description="The AI turns this note into a new deck." onClose={() => setShowModal(false)}>
+          <p className="text-sm text-[var(--text-muted)]">Number of cards</p>
+          <div className="mt-2 flex items-center gap-3">
+            <button onClick={() => setCardCount((previous) => Math.max(1, previous - 1))} aria-label="Fewer cards" className="secondary-button h-9 w-9 rounded-lg">
+              <Minus size={14} />
+            </button>
+            <span className="w-8 text-center font-mono text-lg text-[var(--text)]" aria-live="polite">{cardCount}</span>
+            <button onClick={() => setCardCount((previous) => Math.min(20, previous + 1))} aria-label="More cards" className="secondary-button h-9 w-9 rounded-lg">
+              <Plus size={14} />
+            </button>
           </div>
-        </div>
+          <div className="mt-6 grid grid-cols-2 gap-2">
+            <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</button>
+            <button onClick={handleGenerateFlashcards} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Make deck</button>
+          </div>
+        </Modal>
       )}
     </div>
   )

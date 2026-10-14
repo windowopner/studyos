@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { askClaude } from '@/lib/ai'
-import { requireGoogleToken } from '@/lib/google-server'
+import { googleFailure, requireGoogleToken } from '@/lib/google-server'
+import { badRequest, int, parseJsonArray, readBody, text } from '@/lib/request'
 
 export const maxDuration = 60
 
@@ -11,7 +12,20 @@ export async function POST(req: Request) {
   if (!google.ok) return google.response
   const accessToken = google.token
 
-  const { title, description, type, slideCount = 6 } = await req.json()
+  const body = await readBody(req)
+  const title = text(body?.title, 300).trim()
+  const description = text(body?.description, 4000)
+  const type = body?.type === 'slides' ? 'slides' : 'doc'
+  const slideCount = int(body?.slideCount, 3, 20, 6)
+  if (!title) return badRequest('This assignment has no title.')
+
+  const googlePost = (path: string, payload: unknown) =>
+    fetch(path, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    }).catch(() => null)
 
   const slidePrompt = `You are a Year 9 student submitting this assignment. Write the actual content as if you are the student completing it.
 
@@ -41,30 +55,26 @@ Plain text only, no markdown.`
   const raw = result.text.trim()
 
   if (type === 'slides') {
-    let slides: { title: string; body: string }[] = []
-    try {
-      const cleaned = raw.replace(/```json|```/g, '').trim()
-      slides = JSON.parse(cleaned)
-    } catch {
-      slides = [{ title, body: raw.slice(0, 300) }]
-    }
+    let slides = (parseJsonArray(raw) || [])
+      .filter((slide): slide is { title: string; body: string } =>
+        !!slide && typeof (slide as { title?: unknown }).title === 'string' && typeof (slide as { body?: unknown }).body === 'string')
+      .slice(0, slideCount)
+    if (slides.length === 0) slides = [{ title, body: raw.slice(0, 300) }]
 
-    const createRes = await fetch('https://slides.googleapis.com/v1/presentations', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    })
+    const createRes = await googlePost('https://slides.googleapis.com/v1/presentations', { title })
+    if (!createRes) return NextResponse.json({ error: 'Could not reach Google Slides.' }, { status: 502 })
+    if (!createRes.ok) return googleFailure(createRes.status, 'Google Slides could not create the presentation.')
     const presentation = await createRes.json()
-    const presentationId = presentation.presentationId
+    const presentationId: string = presentation.presentationId
 
     const requests: object[] = []
 
     slides.forEach((slide, i) => {
       if (i === 0) {
-        const titleEl = presentation.slides[0].pageElements?.find(
+        const titleEl = presentation.slides?.[0]?.pageElements?.find(
           (el: PageElement) => el.shape?.placeholder?.type === 'CENTERED_TITLE' || el.shape?.placeholder?.type === 'TITLE'
         )
-        const bodyEl = presentation.slides[0].pageElements?.find(
+        const bodyEl = presentation.slides?.[0]?.pageElements?.find(
           (el: PageElement) => el.shape?.placeholder?.type === 'BODY' || el.shape?.placeholder?.type === 'SUBTITLE'
         )
         if (titleEl) requests.push({ insertText: { objectId: titleEl.objectId, text: slide.title } })
@@ -89,27 +99,25 @@ Plain text only, no markdown.`
       }
     })
 
-    await fetch(`https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requests }),
-    })
+    const updateRes = await googlePost(`https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`, { requests })
+    if (!updateRes?.ok) {
+      return NextResponse.json({ error: 'The presentation was created, but filling in the slides failed. It may be empty.' }, { status: 502 })
+    }
 
     return NextResponse.json({ url: `https://docs.google.com/presentation/d/${presentationId}/edit`, type: 'slides' })
   } else {
-    const createRes = await fetch('https://docs.googleapis.com/v1/documents', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    })
+    const createRes = await googlePost('https://docs.googleapis.com/v1/documents', { title })
+    if (!createRes) return NextResponse.json({ error: 'Could not reach Google Docs.' }, { status: 502 })
+    if (!createRes.ok) return googleFailure(createRes.status, 'Google Docs could not create the document.')
     const doc = await createRes.json()
-    const documentId = doc.documentId
+    const documentId: string = doc.documentId
 
-    await fetch(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: raw } }] }),
+    const updateRes = await googlePost(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+      requests: [{ insertText: { location: { index: 1 }, text: raw } }],
     })
+    if (!updateRes?.ok) {
+      return NextResponse.json({ error: 'The document was created, but writing the text failed. It may be empty.' }, { status: 502 })
+    }
 
     return NextResponse.json({ url: `https://docs.google.com/document/d/${documentId}/edit`, type: 'doc' })
   }

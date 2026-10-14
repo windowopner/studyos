@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Sparkle } from '@phosphor-icons/react'
 import { toast } from '@/components/toaster'
+import { requestJSON } from '@/lib/http'
+import { plainText } from '@/lib/text'
+import { useUnsavedWarning } from '@/lib/use-unsaved-warning'
 import PageHeader from '@/components/page-header'
 
 type Subject = { id: string; name: string; color: string }
@@ -21,29 +24,27 @@ export default function NewNotePage() {
   const [summarizing, setSummarizing] = useState(false)
   const [summary, setSummary] = useState('')
 
+  const [saved, setSaved] = useState(false)
+  useUnsavedWarning(!saved && (title.trim() !== '' || content.trim() !== ''))
+
   useEffect(() => {
-    supabase.from('subjects').select('*').then(({ data }) => setSubjects(data || []))
+    supabase.from('subjects').select('id, name, color').order('name').then(({ data }) => setSubjects(data || []))
   }, [])
 
   const handleSummarize = async () => {
-    if (!content) return
+    if (!content.trim()) return
     setSummarizing(true)
-    const res = await fetch('/api/summarize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-    const data = await res.json()
+    const result = await requestJSON<{ summary: string }>('/api/summarize', { body: { content } })
     setSummarizing(false)
-    if (!res.ok) { toast(data.error || 'Could not summarize.', 'error'); return }
-    setSummary(data.summary)
+    if (!result.ok) { toast(result.error, 'error'); return }
+    setSummary(plainText(result.data.summary))
   }
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    if (!user) { setSaving(false); toast('Your session ended. Sign in again.', 'error'); return }
 
     const { data, error } = await supabase.from('notes').insert({
       profile_id: user.id,
@@ -51,7 +52,7 @@ export default function NewNotePage() {
       content,
       ai_summary: summary || null,
       subject_id: subjectId || null,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tags: [...new Set(tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean))].slice(0, 20),
     }).select().single()
 
     setSaving(false)
@@ -61,6 +62,7 @@ export default function NewNotePage() {
       return
     }
 
+    setSaved(true)
     router.push(`/dashboard/notes/${data.id}`)
   }
 
@@ -88,6 +90,7 @@ export default function NewNotePage() {
             id="title"
             autoFocus
             placeholder="Untitled"
+            maxLength={300}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             className="w-full bg-transparent text-xl font-semibold text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"

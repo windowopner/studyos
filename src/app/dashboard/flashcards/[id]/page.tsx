@@ -6,6 +6,8 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowCounterClockwise, ArrowLeft, ArrowRight, CheckCircle, Trash } from '@phosphor-icons/react'
 import PageHeader from '@/components/page-header'
+import LoadError from '@/components/load-error'
+import { toast } from '@/components/toaster'
 
 type Card = {
   id: string
@@ -23,18 +25,30 @@ export default function FlashcardStudyPage() {
   const [title, setTitle] = useState('')
   const [done, setDone] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [found, setFound] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let alive = true
     const load = async () => {
-      const { data: deck } = await supabase.from('flashcard_decks').select('title').eq('id', id).single()
-      if (deck) setTitle(deck.title)
-
-      const { data } = await supabase.from('flashcards').select('*').eq('deck_id', id)
-      setCards(data || [])
+      const [deckRes, cardsRes] = await Promise.all([
+        supabase.from('flashcard_decks').select('title').eq('id', id).maybeSingle(),
+        // Cards in the order they were made, so a deck always studies the same way.
+        supabase.from('flashcards').select('id, front, back').eq('deck_id', id).order('created_at').order('id'),
+      ])
+      if (!alive) return
+      const badId = deckRes.error?.code === '22P02'
+      if ((deckRes.error && !badId) || cardsRes.error && !badId) { setFailed(true); setLoading(false); return }
+      setFailed(false)
+      setFound(!!deckRes.data)
+      setTitle(deckRes.data?.title || '')
+      setCards(cardsRes.data || [])
       setLoading(false)
     }
     load()
-  }, [id])
+    return () => { alive = false }
+  }, [id, attempt])
 
   const handleNext = () => {
     setFlipped(false)
@@ -59,7 +73,9 @@ export default function FlashcardStudyPage() {
   const handleDelete = async () => {
     if (!confirm('Delete this deck? This cannot be undone.')) return
     setDeleting(true)
-    await supabase.from('flashcard_decks').delete().eq('id', id)
+    const { error } = await supabase.from('flashcard_decks').delete().eq('id', id)
+    if (error) { toast(error.message, 'error'); setDeleting(false); return }
+    toast('Deck deleted.', 'success')
     router.push('/dashboard/flashcards')
   }
 
@@ -90,6 +106,23 @@ export default function FlashcardStudyPage() {
         <div className="skeleton h-4 w-24" />
         <div className="skeleton h-9 w-1/2" />
         <div className="skeleton h-72 rounded-2xl" />
+      </div>
+    )
+  }
+
+  if (failed) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <PageHeader back={back} title="Deck" />
+        <LoadError message="This deck couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
+      </div>
+    )
+  }
+
+  if (!found) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <PageHeader back={back} title="Deck not found" description="It may have been deleted." />
       </div>
     )
   }

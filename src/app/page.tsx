@@ -1,14 +1,6 @@
-'use client'
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { redirect } from 'next/navigation'
 
+// proxy.ts sends signed-out visitors on to /login.
 export default function Home() {
-  const router = useRouter()
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      router.replace(user ? '/dashboard' : '/login')
-    })
-  }, [router])
-  return null
+  redirect('/dashboard')
 }

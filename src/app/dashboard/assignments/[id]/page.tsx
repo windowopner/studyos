@@ -10,6 +10,10 @@ import PageHeader from '@/components/page-header'
 import { dueLabel } from '@/lib/dates'
 import { spotlightProps } from '@/lib/spotlight'
 import { useGoogleConnected } from '@/lib/use-google'
+import { requestJSON } from '@/lib/http'
+import { plainText } from '@/lib/text'
+import Modal from '@/components/modal'
+import LoadError from '@/components/load-error'
 import {
   ArrowLeft,
   ArrowSquareOut,
@@ -79,14 +83,21 @@ export default function AssignmentPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [analyzing, setAnalyzing] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<Record<string, string>>({})
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let alive = true
     const load = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('assignments')
         .select('*, subjects(name, color), notes(id, title)')
         .eq('id', id)
-        .single()
+        .maybeSingle()
+      if (!alive) return
+      // A malformed id in the URL is "not found", not a failure.
+      if (error && error.code !== '22P02') { setFailed(true); setLoading(false); return }
+      setFailed(false)
       setAssignment(data ? {
         ...(data as RawAssignment),
         subjects: pickJoined((data as RawAssignment).subjects),
@@ -95,28 +106,34 @@ export default function AssignmentPage() {
       setLoading(false)
 
       // Attachments come from Classroom, so they only load while Google is connected.
-      if (data?.classroom_id) {
-        const res = await fetch('/api/classroom')
-        if (!res.ok) return
-        const { assignments: list } = await res.json()
-        const found = list?.find((a: { classroomId: string; attachments: Attachment[] }) =>
-          a.classroomId === data.classroom_id
-        )
+      if (data?.classroom_id && googleConnected) {
+        const result = await requestJSON<{ assignments: { classroomId: string; attachments: Attachment[] }[] }>('/api/classroom')
+        if (!alive || !result.ok) return
+        const found = result.data.assignments?.find((a) => a.classroomId === data.classroom_id)
         setAttachments(found?.attachments || [])
       }
     }
     load()
-  }, [id])
+    return () => { alive = false }
+  }, [id, attempt, googleConnected])
 
   const updateStatus = async (status: string) => {
-    await supabase.from('assignments').update({ status }).eq('id', id)
+    if (!assignment || assignment.status === status) return
+    const previous = assignment.status
     setAssignment(prev => prev ? { ...prev, status } : prev)
+    const { error } = await supabase.from('assignments').update({ status }).eq('id', assignment.id)
+    if (error) {
+      toast(error.message, 'error')
+      setAssignment(prev => prev ? { ...prev, status: previous } : prev)
+    }
   }
 
   const handleDelete = async () => {
-    if (!confirm('Delete this assignment? This cannot be undone.')) return
+    if (!assignment || !confirm('Delete this assignment? This cannot be undone.')) return
     setDeleting(true)
-    await supabase.from('assignments').delete().eq('id', id)
+    const { error } = await supabase.from('assignments').delete().eq('id', assignment.id)
+    if (error) { toast(error.message, 'error'); setDeleting(false); return }
+    toast('Assignment deleted.', 'success')
     router.push('/dashboard/assignments')
   }
 
@@ -126,20 +143,11 @@ export default function AssignmentPage() {
     setGenerating(true)
     setDocUrl(null)
 
-    const res = await fetch('/api/generate-doc', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: assignment.title,
-        description: assignment.description,
-        type: docType,
-        slideCount,
-      }),
+    const result = await requestJSON<{ url: string }>('/api/generate-doc', {
+      body: { title: assignment.title, description: assignment.description, type: docType, slideCount },
     })
-
-    const data = await res.json()
-    if (data.url) setDocUrl(data.url)
-    else toast(data.error || 'Could not create the document.', 'error')
+    if (result.ok && result.data.url) setDocUrl(result.data.url)
+    else toast(result.ok ? 'Could not create the document.' : result.error, 'error')
     setGenerating(false)
   }
 
@@ -147,19 +155,11 @@ export default function AssignmentPage() {
     if (!assignment) return
     setAnalyzing(attachment.id)
 
-    const res = await fetch('/api/read-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileId: attachment.id,
-        assignmentTitle: assignment.title,
-        assignmentDescription: assignment.description,
-      }),
+    const result = await requestJSON<{ summary: string }>('/api/read-pdf', {
+      body: { fileId: attachment.id, assignmentTitle: assignment.title, assignmentDescription: assignment.description },
     })
-
-    const data = await res.json()
-    if (data.summary) setAnalysis(prev => ({ ...prev, [attachment.id]: data.summary }))
-    else toast(data.error || 'Could not read the PDF.', 'error')
+    if (result.ok && result.data.summary) setAnalysis(prev => ({ ...prev, [attachment.id]: result.data.summary }))
+    else toast(result.ok ? 'Could not read the PDF.' : result.error, 'error')
     setAnalyzing(null)
   }
 
@@ -169,6 +169,13 @@ export default function AssignmentPage() {
         <div className="skeleton h-4 w-32" />
         <div className="skeleton h-9 w-2/3" />
         <div className="skeleton h-40 rounded-2xl" />
+      </div>
+    )
+  }
+  if (failed) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <LoadError message="This assignment couldn’t load. Check your connection and try again." onRetry={() => { setLoading(true); setAttempt((value) => value + 1) }} />
       </div>
     )
   }
@@ -273,7 +280,7 @@ export default function AssignmentPage() {
                 </div>
                 {analysis[attachment.id] && (
                   <p className="mt-2 whitespace-pre-wrap rounded-xl bg-[var(--surface-soft)] p-3 text-sm leading-relaxed text-[var(--text)]">
-                    {analysis[attachment.id]}
+                    {plainText(analysis[attachment.id])}
                   </p>
                 )}
               </li>
@@ -327,60 +334,45 @@ export default function AssignmentPage() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]" onClick={() => setShowModal(false)}>
-          <div className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-[var(--shadow-pop)]" onClick={(event) => event.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-[var(--text)]">Draft with AI</h2>
-
-            <p className="mt-4 text-sm text-[var(--text-muted)]">Create a</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {(['doc', 'slides'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setDocType(type)}
-                  className={`rounded-xl border px-3 py-2.5 text-sm ${
-                    docType === type
-                      ? 'border-[var(--accent)] bg-[rgb(var(--accent-rgb)/0.1)] font-medium text-[var(--text)]'
-                      : 'text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
-                  }`}
-                >
-                  {type === 'doc' ? 'Google Doc' : 'Google Slides'}
-                </button>
-              ))}
-            </div>
-
-            {docType === 'slides' && (
-              <>
-                <p className="mt-5 text-sm text-[var(--text-muted)]">Slides, including the title slide</p>
-                <div className="mt-2 flex items-center gap-3">
-                  <button
-                    onClick={() => setSlideCount((previous) => Math.max(3, previous - 1))}
-                    aria-label="Fewer slides"
-                    className="secondary-button h-9 w-9 rounded-lg"
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <span className="w-8 text-center font-mono text-lg text-[var(--text)]">{slideCount}</span>
-                  <button
-                    onClick={() => setSlideCount((previous) => Math.min(20, previous + 1))}
-                    aria-label="More slides"
-                    className="secondary-button h-9 w-9 rounded-lg"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              </>
-            )}
-
-            <div className="mt-6 grid grid-cols-2 gap-2">
-              <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
-                Cancel
+        <Modal title="Draft with AI" description="The AI writes a first draft in your Google Drive." onClose={() => setShowModal(false)}>
+          <p className="text-sm text-[var(--text-muted)]">Create a</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {(['doc', 'slides'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setDocType(type)}
+                aria-pressed={docType === type}
+                className={`rounded-xl border px-3 py-2.5 text-sm ${
+                  docType === type
+                    ? 'border-[var(--accent)] bg-[rgb(var(--accent-rgb)/0.1)] font-medium text-[var(--text)]'
+                    : 'text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+                }`}
+              >
+                {type === 'doc' ? 'Google Doc' : 'Google Slides'}
               </button>
-              <button onClick={handleGenerate} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
-                Create
-              </button>
-            </div>
+            ))}
           </div>
-        </div>
+
+          {docType === 'slides' && (
+            <>
+              <p className="mt-5 text-sm text-[var(--text-muted)]">Slides, including the title slide</p>
+              <div className="mt-2 flex items-center gap-3">
+                <button onClick={() => setSlideCount((previous) => Math.max(3, previous - 1))} aria-label="Fewer slides" className="secondary-button h-9 w-9 rounded-lg">
+                  <Minus size={14} />
+                </button>
+                <span className="w-8 text-center font-mono text-lg text-[var(--text)]" aria-live="polite">{slideCount}</span>
+                <button onClick={() => setSlideCount((previous) => Math.min(20, previous + 1))} aria-label="More slides" className="secondary-button h-9 w-9 rounded-lg">
+                  <Plus size={14} />
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="mt-6 grid grid-cols-2 gap-2">
+            <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</button>
+            <button onClick={handleGenerate} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Create</button>
+          </div>
+        </Modal>
       )}
     </div>
   )

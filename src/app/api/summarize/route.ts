@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: `Summarize the following notes in 2-3 concise sentences:\n\n${content}`,
+      content: `Summarize the following notes in 2-3 concise sentences. Plain text only, no Markdown or headings:\n\n${content}`,
     }],
   })
   if (!result.ok) return result.response

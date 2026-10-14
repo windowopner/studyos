@@ -26,6 +26,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { disconnectGoogle } from '@/lib/google'
 import Toaster from '@/components/toaster'
+import Avatar from '@/components/avatar'
 
 type Profile = {
   name: string | null
@@ -88,6 +89,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+
+  // Escape closes the mobile drawer.
+  useEffect(() => {
+    if (!mobileNav) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileNav(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileNav])
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
@@ -153,13 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             aria-expanded={showMenu}
             className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
           >
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="" className="h-8 w-8 rounded-lg object-cover" />
-            ) : (
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-sm font-medium text-[var(--text)]">
-                {profile?.name?.[0] || '?'}
-              </span>
-            )}
+            <Avatar src={profile?.avatar_url} name={profile?.name} className="h-8 w-8 shrink-0 rounded-lg text-sm" />
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--text)]">
               {profile?.name || 'Profile'}
             </span>

@@ -7,6 +7,7 @@ import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
 import { Plus } from '@phosphor-icons/react'
 import PageHeader from '@/components/page-header'
+import { plainText } from '@/lib/text'
 
 type SubjectData = {
   name: string
@@ -117,7 +118,7 @@ export default function NotesPage() {
               <h2 className="mt-3 text-base font-semibold text-[var(--text)]">{note.title}</h2>
 
               {note.ai_summary && (
-                <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">{note.ai_summary}</p>
+                <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">{plainText(note.ai_summary)}</p>
               )}
 
               {note.tags.length > 0 && (

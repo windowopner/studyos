@@ -8,6 +8,7 @@ import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { ArrowLeft, Cards, ChatCircleText, Minus, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import PageHeader from '@/components/page-header'
 import { toast } from '@/components/toaster'
+import { plainText } from '@/lib/text'
 
 type SubjectData = {
   name: string
@@ -218,7 +219,7 @@ export default function NotePage() {
       )}
 
       {editing ? (
-        <div className="glass-panel rounded-2xl">
+        <div className="glass-panel rounded-2xl focus-within:border-[var(--border-strong)]">
           <div className="border-b px-5 pb-4 pt-5 sm:px-6">
             <label htmlFor="edit-title" className="sr-only">Title</label>
             <input
@@ -244,7 +245,7 @@ export default function NotePage() {
           {note.ai_summary && (
             <div className="mb-6 rounded-2xl border-l-2 border-[var(--accent)] bg-[var(--surface-soft)] px-5 py-4">
               <p className="text-xs font-medium text-[var(--text-muted)]">Summary</p>
-              <p className="mt-1 text-sm leading-relaxed text-[var(--text)]">{note.ai_summary}</p>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text)]">{plainText(note.ai_summary)}</p>
             </div>
           )}
           <article className="max-w-[68ch] whitespace-pre-wrap text-[15px] leading-[1.75] text-[var(--text)]">

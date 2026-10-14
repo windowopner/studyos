@@ -8,6 +8,7 @@ import { useGoogleConnected } from '@/lib/use-google'
 import { toast } from '@/components/toaster'
 import PageHeader from '@/components/page-header'
 import Field, { inputClass } from '@/components/field'
+import Avatar from '@/components/avatar'
 
 export default function ProfilePage() {
   const [name, setName] = useState('')
@@ -93,13 +94,7 @@ export default function ProfilePage() {
             aria-label="Change photo"
             className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl"
           >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center bg-[var(--surface-soft)] text-2xl font-semibold text-[var(--text)]">
-                {name?.[0] || '?'}
-              </span>
-            )}
+            <Avatar key={avatarUrl} src={avatarUrl} name={name} className="h-full w-full text-2xl" />
             <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
               {uploading ? <span className="text-xs">Uploading…</span> : <Camera size={20} />}
             </span>

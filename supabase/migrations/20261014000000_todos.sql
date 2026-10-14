@@ -15,3 +15,6 @@ create policy "own todos" on public.todos
   for all to authenticated
   using (auth.uid() = profile_id)
   with check (auth.uid() = profile_id);
+
+-- This project doesn't grant new tables to API roles automatically.
+grant select, insert, update, delete on public.todos to authenticated;

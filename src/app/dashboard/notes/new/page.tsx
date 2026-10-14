@@ -81,7 +81,7 @@ export default function NewNotePage() {
         }
       />
 
-      <div className="glass-panel rounded-2xl">
+      <div className="glass-panel rounded-2xl focus-within:border-[var(--border-strong)]">
         <div className="border-b px-5 pb-4 pt-5 sm:px-6">
           <label htmlFor="title" className="sr-only">Title</label>
           <input

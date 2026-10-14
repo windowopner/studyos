@@ -111,9 +111,14 @@ select {
     opacity 160ms ease;
 }
 
-:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+/* Text fields show focus through their own border (.field-input) or their container (focus-within). */
+:where(a, button, select, [tabindex]):focus-visible {
   outline: 2px solid rgb(var(--accent-rgb) / 0.7);
   outline-offset: 2px;
+}
+
+:where(input, textarea):focus-visible {
+  outline: none;
 }
 
 ::-webkit-scrollbar {

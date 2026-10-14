@@ -184,7 +184,7 @@ export default function TodoPage() {
         ) : undefined}
       />
 
-      <form onSubmit={addTodo} className="glass-panel mb-6 flex items-center gap-2 rounded-2xl p-2 pl-4">
+      <form onSubmit={addTodo} className="glass-panel mb-6 flex items-center gap-2 rounded-2xl p-2 pl-4 focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgb(var(--accent-rgb)/0.14)]">
         <Plus size={16} className="shrink-0 text-[var(--text-muted)]" />
         <label htmlFor="new-todo" className="sr-only">New to-do</label>
         <input

@@ -378,7 +378,9 @@ select {
 
   /* Each page rises in a few pixels when you navigate to it (dashboard/template.tsx). */
   .page-enter {
-    animation: page-enter 420ms var(--ease-out) both;
+    /* backwards, not both: once finished it leaves no transform or stacking context behind,
+       so fixed dialogs inside a page still cover the top bar. */
+    animation: page-enter 420ms var(--ease-out) backwards;
   }
 
   /* Loading placeholder shaped like the content it stands in for. */

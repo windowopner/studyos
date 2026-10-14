@@ -343,6 +343,9 @@ create table public.poll_votes (
   unique (poll_id, profile_id)
 );
 alter table public.poll_votes enable row level security;
+-- Default privileges hand new tables extra grants; keep only what the app uses.
+revoke all on public.poll_votes from anon;
+revoke truncate, trigger, references on public.poll_votes from authenticated;
 grant select, insert, delete on public.poll_votes to authenticated;
 
 create policy "members read votes" on public.poll_votes for select to authenticated

@@ -101,7 +101,7 @@ function PollCard({ poll, votes, userId, onVote }: { poll: Poll; votes: Vote[]; 
   const total = votes.length
   const mine = votes.find((vote) => vote.profile_id === userId)?.option_index ?? null
   return (
-    <div className="min-w-[200px] max-w-xs">
+    <div className="w-full min-w-0">
       <p className="mb-3 text-sm font-medium">{poll.question}</p>
       <div className="flex flex-col gap-2">
         {poll.options.map((option, index) => {
@@ -535,7 +535,6 @@ export default function ChatRoomPage() {
 
   return (
     <div className="flex h-[calc(100dvh-9rem)] gap-4 lg:h-[calc(100dvh-6.5rem)]">
-      {emojiFor && <div className="fixed inset-0 z-[5]" onClick={() => setEmojiFor(null)} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
@@ -553,7 +552,7 @@ export default function ChatRoomPage() {
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-2 py-0.5 text-xs ${roleStyle(myRole)}`}>{roleLabel(myRole)}{isAdmin && ', admin'}</span>
             <button onClick={copyInvite} className="secondary-button rounded-lg px-3 py-1.5 text-xs"><LinkSimple size={14} /> Invite</button>
-            <button onClick={() => { setShowMembers((value) => !value); loadMembers() }} aria-expanded={showMembers} className="secondary-button rounded-lg px-3 py-1.5 text-xs">
+            <button onClick={() => { setShowMembers((value) => !value); loadMembers() }} aria-expanded={showMembers} aria-label={`Members (${members.length})`} className="secondary-button rounded-lg px-3 py-1.5 text-xs">
               <UsersThree size={14} /> <span className="font-mono">{members.length}</span>
             </button>
           </div>
@@ -592,22 +591,18 @@ export default function ChatRoomPage() {
             const poll = message.poll_id ? polls[message.poll_id] : null
 
             const actions = (
-              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
                 {isModerator && (
-                  <button onClick={() => setPinned(message)} aria-label="Pin" className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"><PushPin size={14} /></button>
+                  <button onClick={() => setPinned(message)} aria-label="Pin" className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"><PushPin size={13} /></button>
                 )}
-                <div className="relative z-[6]">
-                  <button onClick={(event) => { event.stopPropagation(); setEmojiFor(emojiFor === message.id ? null : message.id) }} aria-label="React" className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]">
-                    <Smiley size={14} />
-                  </button>
-                  {emojiFor === message.id && (
-                    <div className={`dialog-panel absolute bottom-full z-10 mb-1 flex gap-1 rounded-xl px-2 py-1.5 ${isMe ? 'right-0' : 'left-0'}`}>
-                      {EMOJIS.map((emoji) => (
-                        <button key={emoji} onClick={() => react(message.id, emoji)} className="text-base transition-transform hover:scale-125">{emoji}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  onClick={() => setEmojiFor(emojiFor === message.id ? null : message.id)}
+                  aria-label="React"
+                  aria-expanded={emojiFor === message.id}
+                  className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+                >
+                  <Smiley size={14} />
+                </button>
                 <button onClick={() => setReplyTo({ id: message.id, preview: previewOf(message) })} aria-label="Reply" className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]">
                   <ArrowBendUpLeft size={14} />
                 </button>
@@ -629,9 +624,13 @@ export default function ChatRoomPage() {
                       <ArrowBendUpLeft size={12} className="shrink-0" /> <span className="truncate">{message.reply_preview}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-1.5">
-                    {isMe && actions}
-                    <div className={`rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'rounded-br-md bg-[var(--accent)] text-[var(--on-accent)]' : 'rounded-bl-md bg-[var(--surface-soft)] text-[var(--text)]'}`}>
+                  <div className="flex max-w-full items-center">
+                    {/* Polls sit in a neutral card so their bars and percentages stay readable. */}
+                    <div className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
+                      poll || message.poll_id
+                        ? 'w-[min(18rem,100%)] border bg-[var(--surface)] text-[var(--text)]'
+                        : isMe ? 'rounded-br-md bg-[var(--accent)] text-[var(--on-accent)]' : 'rounded-bl-md bg-[var(--surface-soft)] text-[var(--text)]'
+                    }`}>
                       {poll ? (
                         <PollCard poll={poll} votes={votes.filter((item) => item.poll_id === poll.id)} userId={userId} onVote={(index) => vote(poll.id, index)} />
                       ) : message.poll_id ? (
@@ -640,8 +639,14 @@ export default function ChatRoomPage() {
                         <MessageContent message={message} />
                       )}
                     </div>
-                    {!isMe && actions}
                   </div>
+                  {emojiFor === message.id && (
+                    <div role="group" aria-label="Pick a reaction" className="flex gap-1 rounded-xl border bg-[var(--surface-solid)] px-2 py-1 [animation:toast-in_180ms_var(--ease-out)]">
+                      {EMOJIS.map((emoji) => (
+                        <button key={emoji} onClick={() => react(message.id, emoji)} className="rounded-md px-1 text-base transition-transform hover:scale-125">{emoji}</button>
+                      ))}
+                    </div>
+                  )}
                   {Object.keys(grouped).length > 0 && (
                     <div className="mt-0.5 flex flex-wrap gap-1 px-1">
                       {Object.entries(grouped).map(([emoji, { count, mine }]) => (
@@ -656,9 +661,13 @@ export default function ChatRoomPage() {
                       ))}
                     </div>
                   )}
-                  <span className="px-1 font-mono text-[11px] text-[var(--text-muted)]">
-                    {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                  {/* Actions live on the timestamp line so they never squeeze the bubble. */}
+                  <div className={`flex items-center gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                    <span className="whitespace-nowrap px-1 font-mono text-[11px] text-[var(--text-muted)]">
+                      {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {actions}
+                  </div>
                 </div>
               </div>
             )
@@ -704,7 +713,7 @@ export default function ChatRoomPage() {
       {showMembers && (
         <>
           <button aria-label="Close members" className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setShowMembers(false)} />
-          <aside className="fixed inset-y-0 right-0 z-40 flex w-72 flex-col border-l bg-[var(--surface-solid)] p-4 lg:static lg:z-auto lg:w-64 lg:rounded-2xl lg:border">
+          <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(18rem,100vw)] flex-col border-l bg-[var(--surface-solid)] p-4 lg:static lg:z-auto lg:w-64 lg:rounded-2xl lg:border">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-medium text-[var(--text)]">Members</h2>
               <button onClick={() => setShowMembers(false)} aria-label="Close members" className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text)]"><X size={14} /></button>

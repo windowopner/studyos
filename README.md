@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# StudyOS
 
-## Getting Started
+A study workspace: assignments, a to-do list, notes, flashcards, subjects, an AI tutor, and study rooms. Next.js 16 with Supabase for sign-in and data, deployed on Vercel.
 
-First, run the development server:
+## Running it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env.local` needs:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | What it's for |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project (sign-in and data) |
+| `ANTHROPIC_API_KEY` | Optional. Without it the AI features (tutor, summaries, flashcard generation) say they're off and everything else works. |
+| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-haiku-5-5`. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Google
 
-## Learn More
+Signing in with Google only shares name and email. Google Classroom, Docs, and Slides are optional: Profile has a **Connect Google** button that asks for those scopes, and the token is kept in an httpOnly cookie for an hour. Classroom import, Classroom courses on the Subjects page, PDF summaries, and "Draft in Google Docs" only appear while connected. Many school accounts block third-party apps, so nothing else depends on it.
 
-To learn more about Next.js, take a look at the following resources:
+## Database
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Tables live in the Supabase project; changes made from this repo are in `supabase/migrations/` (the original tables predate it). Every personal table (`assignments`, `notes`, `subjects`, `todos`, `flashcard_decks`, `ai_chats`, ...) is limited to its owner by row-level security.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+A GitHub Action (`.github/workflows/keep-alive.yml`) reads one row every three days so the free Supabase project doesn't pause.
 
-## Deploy on Vercel
+### Known issue: study room permissions
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The community tables still trust the browser:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Room passwords are stored in plain text and every signed-in user can read them; the check happens client-side.
+- `room_members`, `room_polls`, and `message_reactions` allow any signed-in user to change any row, so a member could make themselves owner or undo a kick.
+
+Fixing this means hashing passwords and joining through a database function, and limiting membership changes to owners and moderators.

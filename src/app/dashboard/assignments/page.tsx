@@ -5,6 +5,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
+import { toast } from '@/components/toaster'
+import PageHeader from '@/components/page-header'
+import { dueLabel } from '@/lib/dates'
+import { useGoogleConnected } from '@/lib/use-google'
+import { CaretRight, DownloadSimple, Plus, Trash, X } from '@phosphor-icons/react'
 
 type SubjectData = {
   name: string
@@ -41,8 +46,8 @@ type ClassroomAssignment = {
 }
 
 const statusLabel: Record<string, string> = {
-  todo: 'To Do',
-  in_progress: 'In Progress',
+  todo: 'To do',
+  in_progress: 'In progress',
   done: 'Done',
 }
 
@@ -52,10 +57,25 @@ const priorityLabel: Record<number, string> = {
   3: 'High',
 }
 
+type Filter = 'all' | 'todo' | 'in_progress' | 'done'
+
+const filterLabel: Record<Filter, string> = {
+  all: 'All',
+  todo: 'To do',
+  in_progress: 'In progress',
+  done: 'Done',
+}
+
+const priorityDot: Record<number, string> = {
+  1: 'bg-[var(--border-strong)]',
+  2: 'bg-[var(--warn)]',
+  3: 'bg-[var(--danger)]',
+}
+
 const statusStyle: Record<string, string> = {
-  done: 'bg-emerald-500/10 text-emerald-400',
-  in_progress: 'bg-blue-500/10 text-blue-400',
-  todo: 'bg-white/5 text-[var(--text-muted)]',
+  done: 'bg-[var(--success-soft)] text-[var(--success)]',
+  in_progress: 'bg-[rgb(var(--accent-rgb)/0.12)] text-[var(--accent)]',
+  todo: 'bg-[var(--surface-soft)] text-[var(--text-muted)]',
 }
 
 export default function AssignmentsPage() {
@@ -66,6 +86,8 @@ export default function AssignmentsPage() {
   const [clearing, setClearing] = useState(false)
   const [classroomList, setClassroomList] = useState<ClassroomAssignment[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [filter, setFilter] = useState<Filter>('all')
+  const googleConnected = useGoogleConnected()
 
   const fetchAssignments = () => {
     supabase
@@ -98,13 +120,14 @@ export default function AssignmentsPage() {
   const handleFetchClassroom = async () => {
     setFetching(true)
     const response = await fetch('/api/classroom')
-    if (response.status === 401) {
-      alert('Google Classroom access not available. Please sign out and sign in again.')
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      toast(body.error || 'Could not reach Google Classroom.', 'error')
       setFetching(false)
       return
     }
 
-    const { assignments: raw } = await response.json()
+    const raw = body.assignments || []
     const today = new Date().toISOString().split('T')[0]
     const list: ClassroomAssignment[] = raw.map((assignment: Omit<ClassroomAssignment, 'selected' | 'isPast' | 'hasDate'>) => {
       const hasDate = !!assignment.due_date
@@ -198,7 +221,7 @@ export default function AssignmentsPage() {
 
     setImporting(false)
     setShowModal(false)
-    alert(`Imported ${imported} assignments.`)
+    toast(`Imported ${imported} assignment${imported === 1 ? '' : 's'}.`, 'success')
     fetchAssignments()
   }
 
@@ -206,104 +229,134 @@ export default function AssignmentsPage() {
   const past = classroomList.filter((assignment) => assignment.isPast)
   const noDate = classroomList.filter((assignment) => !assignment.hasDate)
 
-  if (loading) {
-    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
+  const counts: Record<Filter, number> = {
+    all: assignments.length,
+    todo: assignments.filter((assignment) => assignment.status === 'todo').length,
+    in_progress: assignments.filter((assignment) => assignment.status === 'in_progress').length,
+    done: assignments.filter((assignment) => assignment.status === 'done').length,
   }
+  const visible = filter === 'all' ? assignments : assignments.filter((assignment) => assignment.status === filter)
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="page-kicker">Assignments</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Assignments</h1>
-        </div>
+      <PageHeader
+        title="Assignments"
+        description="Everything you have to hand in, by due date."
+        actions={
+          <>
+            {googleConnected && (
+              <button
+                onClick={handleFetchClassroom}
+                disabled={fetching}
+                className="secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+              >
+                <DownloadSimple size={16} />
+                {fetching ? 'Fetching…' : 'Import from Classroom'}
+              </button>
+            )}
+            <Link href="/dashboard/assignments/new" className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+              <Plus size={16} weight="bold" />
+              New assignment
+            </Link>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          {assignments.length > 0 && (
-            <button
-              onClick={handleClearAll}
-              disabled={clearing}
-              className="ghost-button text-sm font-medium text-red-400 hover:text-red-300 disabled:opacity-40"
-            >
-              {clearing ? 'Clearing...' : 'Clear all'}
-            </button>
-          )}
+      <div role="tablist" aria-label="Filter by status" className="mb-4 inline-flex rounded-xl border bg-[var(--surface)] p-1">
+        {(Object.keys(filterLabel) as Filter[]).map((key) => (
           <button
-            onClick={handleFetchClassroom}
-            disabled={fetching}
-            className="secondary-button rounded-2xl px-4 py-3 text-sm font-medium disabled:opacity-40"
+            key={key}
+            role="tab"
+            aria-selected={filter === key}
+            onClick={() => setFilter(key)}
+            className={`rounded-lg px-3 py-1.5 text-sm ${
+              filter === key
+                ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
           >
-            {fetching ? 'Fetching...' : 'Import from Classroom'}
+            {filterLabel[key]}
+            <span className="ml-1.5 font-mono text-xs text-[var(--text-muted)]">{counts[key]}</span>
           </button>
-          <Link href="/dashboard/assignments/new" className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold">
-            New Assignment
-          </Link>
-        </div>
+        ))}
       </div>
 
-      {assignments.length === 0 ? (
-        <div className="empty-card rounded-[28px] px-6 py-12 text-center">
-          <p className="text-sm text-[var(--text-muted)]">No assignments yet.</p>
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((row) => <div key={row} className="skeleton h-[72px] rounded-2xl" />)}
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <p className="text-sm font-medium text-[var(--text)]">
+            {assignments.length === 0 ? 'No assignments yet' : `Nothing ${filterLabel[filter].toLowerCase()}`}
+          </p>
+          {assignments.length === 0 && (
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Add one yourself{googleConnected ? ' or import them from Google Classroom' : ''}.
+            </p>
+          )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {assignments.map((assignment) => (
-            <Link
-              key={assignment.id}
-              href={`/dashboard/assignments/${assignment.id}`}
-              className="interactive-card block rounded-[26px] px-5 py-5"
-              {...spotlightProps}
-            >
-              <div className="relative z-10">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {assignment.subjects && (
-                      <span
-                        className="rounded-full px-2.5 py-1 text-[11px] font-medium text-white"
-                        style={{ backgroundColor: assignment.subjects.color }}
-                      >
-                        {assignment.subjects.name}
-                      </span>
-                    )}
-                    <span className="text-[11px] text-[var(--text-muted)]">
-                      {priorityLabel[assignment.priority]} priority
-                    </span>
-                    {assignment.max_points && (
-                      <span className="text-[11px] text-[var(--text-muted)]">{assignment.max_points} pts</span>
-                    )}
+        <ul className="glass-panel divide-y overflow-hidden rounded-2xl">
+          {visible.map((assignment) => {
+            const due = dueLabel(assignment.due_date)
+            const done = assignment.status === 'done'
+            return (
+              <li key={assignment.id}>
+                <Link
+                  href={`/dashboard/assignments/${assignment.id}`}
+                  className="group flex items-center gap-4 px-5 py-4 hover:bg-[var(--surface-hover)]"
+                >
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${priorityDot[assignment.priority] || priorityDot[1]}`} title={`${priorityLabel[assignment.priority]} priority`} />
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-sm font-medium ${done ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text)]'}`}>
+                      {assignment.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
+                      {assignment.subjects && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: assignment.subjects.color }} />
+                          {assignment.subjects.name}
+                        </span>
+                      )}
+                      {assignment.max_points && <span>{assignment.max_points} pts</span>}
+                    </div>
                   </div>
-
-                  <span className="text-[11px] text-[var(--text-muted)]">
-                    {assignment.due_date ? `Due ${new Date(assignment.due_date).toLocaleDateString()}` : 'No due date'}
-                  </span>
-                </div>
-
-                <h2 className="mt-3 text-base font-semibold text-[var(--text)]">{assignment.title}</h2>
-
-                {assignment.description && (
-                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-[var(--text-muted)]">{assignment.description}</p>
-                )}
-
-                <div className="mt-4">
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${statusStyle[assignment.status]}`}>
+                  {!done && (
+                    <span className={`hidden shrink-0 font-mono text-xs sm:block ${due.overdue ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>
+                      {due.text}
+                    </span>
+                  )}
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${statusStyle[assignment.status]}`}>
                     {statusLabel[assignment.status]}
                   </span>
-                </div>
-              </div>
-            </Link>
-          ))}
+                  <CaretRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {assignments.length > 0 && (
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleClearAll}
+            disabled={clearing}
+            className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--danger)] disabled:opacity-40"
+          >
+            <Trash size={14} />
+            {clearing ? 'Deleting…' : 'Delete all assignments'}
+          </button>
         </div>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="glass-panel flex max-h-[82vh] w-full max-w-3xl flex-col rounded-[30px] p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]">
+          <div className="glass-panel flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl p-6">
             <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="page-kicker">Classroom import</p>
-                <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Choose what to bring in</h2>
-              </div>
-              <button onClick={() => setShowModal(false)} className="ghost-button text-xl leading-none">×</button>
+              <h2 className="text-lg font-semibold text-[var(--text)]">Import from Classroom</h2>
+              <button onClick={() => setShowModal(false)} aria-label="Close" className="ghost-button rounded-lg p-1.5 hover:bg-[var(--surface-hover)]"><X size={18} /></button>
             </div>
 
             <div className="mb-4 flex flex-wrap gap-2">
@@ -339,13 +392,13 @@ export default function AssignmentsPage() {
               </span>
 
               <div className="flex gap-2">
-                <button onClick={() => setShowModal(false)} className="secondary-button rounded-2xl px-4 py-3 text-sm font-medium">
+                <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-3 text-sm font-medium">
                   Cancel
                 </button>
                 <button
                   onClick={handleImport}
                   disabled={importing || classroomList.filter((assignment) => assignment.selected).length === 0}
-                  className="primary-button rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
+                  className="primary-button rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
                 >
                   {importing ? 'Importing...' : 'Import'}
                 </button>
@@ -373,12 +426,12 @@ function SelectionGroup({
 
   return (
     <div>
-      <p className={`section-label ${danger ? 'text-red-400' : ''}`}>{title}</p>
+      <p className={`section-label ${danger ? 'text-[var(--danger)]' : ''}`}>{title}</p>
       <div className="mt-3 space-y-3">
         {items.map((assignment) => (
           <label
             key={assignment.classroomId}
-            className="interactive-card flex cursor-pointer items-start gap-3 rounded-[24px] px-4 py-4"
+            className="interactive-card flex cursor-pointer items-start gap-3 rounded-2xl px-4 py-4"
             {...spotlightProps}
           >
             <input
@@ -396,8 +449,8 @@ function SelectionGroup({
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
                 <span>{assignment.courseName}</span>
                 {assignment.due_date && (
-                  <span className={danger ? 'text-red-400' : ''}>
-                    {danger ? 'Past due · ' : 'Due '}
+                  <span className={danger ? 'text-[var(--danger)]' : ''}>
+                    {danger ? 'Past due ' : 'Due '}
                     {new Date(assignment.due_date).toLocaleDateString()}
                   </span>
                 )}

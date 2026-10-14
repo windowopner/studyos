@@ -1,394 +1,253 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { Check, Plus, X } from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
 import { pickJoined, type JoinedRelation } from '@/lib/relations'
-import { spotlightProps } from '@/lib/spotlight'
+import { dueLabel } from '@/lib/dates'
+import PageHeader from '@/components/page-header'
+import { toast } from '@/components/toaster'
 
 type SubjectData = {
   name: string
   color: string
 }
 
-type SubjectBadge = SubjectData | null
-
-type TodoItem = {
+type AssignmentItem = {
   id: string
   title: string
   due_date: string | null
   status: string
   priority: number
-  subjects: SubjectBadge
+  subjects: SubjectData | null
 }
 
-type RawTodoItem = Omit<TodoItem, 'subjects'> & {
+type RawAssignmentItem = Omit<AssignmentItem, 'subjects'> & {
   subjects: JoinedRelation<SubjectData>
 }
 
-type CustomTodo = {
+type Todo = {
   id: string
   title: string
   done: boolean
 }
 
-export default function TodoPage() {
-  const [items, setItems] = useState<TodoItem[]>([])
-  const [customTodos, setCustomTodos] = useState<CustomTodo[]>([])
-  const [newTodo, setNewTodo] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [clearing, setClearing] = useState(false)
-  const [tab, setTab] = useState<'todo' | 'done'>('todo')
-
-  const fetchItems = async () => {
-    const { data } = await supabase
-      .from('assignments')
-      .select('id, title, due_date, status, priority, subjects(name, color)')
-      .order('due_date', { ascending: true })
-
-    setItems(((data || []) as RawTodoItem[]).map((item) => ({
-      ...item,
-      subjects: pickJoined(item.subjects),
-    })))
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase
-        .from('assignments')
-        .select('id, title, due_date, status, priority, subjects(name, color)')
-        .order('due_date', { ascending: true })
-
-      setItems(((data || []) as RawTodoItem[]).map((item) => ({
-        ...item,
-        subjects: pickJoined(item.subjects),
-      })))
-      setLoading(false)
-    }
-
-    load()
-  }, [])
-
-  const toggleAssignment = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'done' ? 'todo' : 'done'
-    await supabase.from('assignments').update({ status: newStatus }).eq('id', id)
-    setItems((previous) => previous.map((item) => item.id === id ? { ...item, status: newStatus } : item))
-  }
-
-  const addCustomTodo = () => {
-    if (!newTodo.trim()) return
-    setCustomTodos((previous) => [
-      ...previous,
-      { id: crypto.randomUUID(), title: newTodo.trim(), done: false },
-    ])
-    setNewTodo('')
-  }
-
-  const toggleCustomTodo = (id: string) => {
-    setCustomTodos((previous) => previous.map((todo) => todo.id === id ? { ...todo, done: !todo.done } : todo))
-  }
-
-  const deleteCustomTodo = (id: string) => {
-    setCustomTodos((previous) => previous.filter((todo) => todo.id !== id))
-  }
-
-  const handleClearAll = async () => {
-    if (!confirm('Clear everything? This cannot be undone.')) return
-    setClearing(true)
-    const ids = items.map((assignment) => assignment.id)
-    if (ids.length > 0) await supabase.from('assignments').delete().in('id', ids)
-    setCustomTodos([])
-    await fetchItems()
-    setClearing(false)
-  }
-
-  const today = new Date().toISOString().split('T')[0]
-  const todoAssignments = items.filter((item) => item.status !== 'done')
-  const doneAssignments = items.filter((item) => item.status === 'done')
-  const todoCustom = customTodos.filter((todo) => !todo.done)
-  const doneCustom = customTodos.filter((todo) => todo.done)
-  const totalAll = items.length + customTodos.length
-  const totalDone = doneAssignments.length + doneCustom.length
-  const progress = totalAll === 0 ? 0 : Math.round((totalDone / totalAll) * 100)
-  const overdueItems = todoAssignments.filter((item) => item.due_date && item.due_date < today)
-  const todayItems = todoAssignments.filter((item) => item.due_date === today)
-  const upcomingItems = todoAssignments.filter((item) => item.due_date && item.due_date > today)
-  const nodateItems = todoAssignments.filter((item) => !item.due_date)
-
-  if (loading) {
-    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
-  }
-
+function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
-    <div className="mx-auto max-w-5xl">
-      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-2xl">
-            <p className="page-kicker">To-do</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">To-do</h1>
-            <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
-              Track tasks and progress.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3 xl:w-[34rem]">
-            {[
-              { label: 'Progress', value: `${progress}%`, detail: `${totalDone} of ${totalAll} complete` },
-              { label: 'Active items', value: `${todoAssignments.length + todoCustom.length}`, detail: 'Still on your plate' },
-              { label: 'Done', value: `${doneAssignments.length + doneCustom.length}`, detail: 'Already handled' },
-            ].map((stat) => (
-              <div key={stat.label} className="interactive-card rounded-[28px] px-4 py-4" {...spotlightProps}>
-                <p className="relative z-10 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{stat.label}</p>
-                <p className="relative z-10 mt-3 text-2xl font-semibold text-[var(--text)]">{stat.value}</p>
-                <p className="relative z-10 mt-2 text-sm text-[var(--text-muted)]">{stat.detail}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm text-[var(--text-muted)]">Overall progress</span>
-            <span className="text-sm font-semibold text-[var(--text)]">{progress}%</span>
-          </div>
-          <div className="h-3 overflow-hidden rounded-full bg-white/6">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ background: 'linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-secondary-rgb)))', width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      </section>
-
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="glass-panel flex rounded-full p-1">
-          <button
-            onClick={() => setTab('todo')}
-            className={`rounded-full px-4 py-2 text-sm font-medium ${
-              tab === 'todo' ? 'bg-[rgb(var(--accent-rgb)_/_0.16)] text-[var(--text)]' : 'text-[var(--text-muted)]'
-            }`}
-          >
-            To-do ({todoAssignments.length + todoCustom.length})
-          </button>
-          <button
-            onClick={() => setTab('done')}
-            className={`rounded-full px-4 py-2 text-sm font-medium ${
-              tab === 'done' ? 'bg-[rgb(var(--accent-rgb)_/_0.16)] text-[var(--text)]' : 'text-[var(--text-muted)]'
-            }`}
-          >
-            Done ({doneAssignments.length + doneCustom.length})
-          </button>
-        </div>
-
-        {totalAll > 0 && (
-          <button
-            onClick={handleClearAll}
-            disabled={clearing}
-            className="ghost-button text-sm font-medium text-red-400 hover:text-red-300 disabled:opacity-40"
-          >
-            {clearing ? 'Clearing...' : 'Clear all'}
-          </button>
-        )}
-      </div>
-
-      {tab === 'todo' && (
-        <>
-          <section className="glass-panel mt-6 rounded-[28px] px-5 py-5 sm:px-6">
-            <p className="section-label">Quick add</p>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-              <input
-                type="text"
-                placeholder="Add a quick to-do..."
-                value={newTodo}
-                onChange={(event) => setNewTodo(event.target.value)}
-                onKeyDown={(event) => event.key === 'Enter' && addCustomTodo()}
-                className="field-input w-full rounded-2xl px-4 py-3 text-sm"
-              />
-              <button
-                onClick={addCustomTodo}
-                className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold sm:w-auto"
-              >
-                Add task
-              </button>
-            </div>
-          </section>
-
-          {todoCustom.length > 0 && (
-            <Section label="Quick tasks">
-              {todoCustom.map((todo) => (
-                <div
-                  key={todo.id}
-                  className="interactive-card flex items-center gap-3 rounded-[24px] px-4 py-4"
-                  {...spotlightProps}
-                >
-                  <input
-                    type="checkbox"
-                    checked={todo.done}
-                    onChange={() => toggleCustomTodo(todo.id)}
-                    className="relative z-10"
-                    style={{ accentColor: 'var(--accent)' }}
-                  />
-                  <span className="relative z-10 flex-1 text-sm text-[var(--text)]">{todo.title}</span>
-                  <button
-                    onClick={() => deleteCustomTodo(todo.id)}
-                    className="relative z-10 text-xs text-red-400 hover:text-red-300"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </Section>
-          )}
-
-          {overdueItems.length > 0 && (
-            <Section label="Overdue" labelClass="text-red-400">
-              {overdueItems.map((item) => (
-                <AssignmentRow key={item.id} item={item} onToggle={toggleAssignment} today={today} />
-              ))}
-            </Section>
-          )}
-
-          {todayItems.length > 0 && (
-            <Section label="Due today">
-              {todayItems.map((item) => (
-                <AssignmentRow key={item.id} item={item} onToggle={toggleAssignment} today={today} />
-              ))}
-            </Section>
-          )}
-
-          {upcomingItems.length > 0 && (
-            <Section label="Upcoming">
-              {upcomingItems.map((item) => (
-                <AssignmentRow key={item.id} item={item} onToggle={toggleAssignment} today={today} />
-              ))}
-            </Section>
-          )}
-
-          {nodateItems.length > 0 && (
-            <Section label="No due date">
-              {nodateItems.map((item) => (
-                <AssignmentRow key={item.id} item={item} onToggle={toggleAssignment} today={today} />
-              ))}
-            </Section>
-          )}
-
-          {todoAssignments.length === 0 && todoCustom.length === 0 && (
-            <div className="empty-card mt-6 rounded-[28px] px-6 py-12 text-center">
-              <p className="text-sm text-[var(--text-muted)]">All done. 🎉</p>
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'done' && (
-        <section className="mt-6 space-y-3">
-          {doneCustom.map((todo) => (
-            <div
-              key={todo.id}
-              className="interactive-card flex items-center gap-3 rounded-[24px] px-4 py-4"
-              {...spotlightProps}
-            >
-              <input
-                type="checkbox"
-                checked={todo.done}
-                onChange={() => toggleCustomTodo(todo.id)}
-                className="relative z-10"
-                style={{ accentColor: 'var(--accent)' }}
-              />
-              <span className="relative z-10 flex-1 text-sm text-[var(--text-muted)] line-through">{todo.title}</span>
-              <button
-                onClick={() => deleteCustomTodo(todo.id)}
-                className="relative z-10 text-xs text-red-400 hover:text-red-300"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-
-          {doneAssignments.map((item) => (
-            <AssignmentRow key={item.id} item={item} onToggle={toggleAssignment} today={today} />
-          ))}
-
-          {doneAssignments.length === 0 && doneCustom.length === 0 && (
-            <div className="empty-card rounded-[28px] px-6 py-12 text-center">
-              <p className="text-sm text-[var(--text-muted)]">Nothing completed yet.</p>
-            </div>
-          )}
-        </section>
-      )}
-    </div>
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
+        checked ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]' : 'border-[var(--border-strong)] hover:border-[var(--accent)]'
+      }`}
+    >
+      <Check size={12} weight="bold" className={`transition-transform duration-200 ${checked ? 'scale-100' : 'scale-0'}`} />
+    </button>
   )
 }
 
-function Section({
-  label,
-  labelClass,
-  children,
-}: {
-  label: string
-  labelClass?: string
-  children: React.ReactNode
-}) {
+function Group({ title, tone, children }: { title: string; tone?: 'danger'; children: React.ReactNode }) {
   return (
-    <section className="mt-6">
-      <p className={`section-label ${labelClass ?? ''}`}>{label}</p>
-      <div className="mt-3 space-y-3">{children}</div>
+    <section>
+      <h2 className={`mb-2 text-sm font-medium ${tone === 'danger' ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{title}</h2>
+      <ul className="glass-panel divide-y overflow-hidden rounded-2xl">{children}</ul>
     </section>
   )
 }
 
-function AssignmentRow({
-  item,
-  onToggle,
-  today,
-}: {
-  item: TodoItem
-  onToggle: (id: string, status: string) => void
-  today: string
-}) {
-  const isOverdue = item.due_date && item.due_date < today && item.status !== 'done'
+export default function TodoPage() {
+  const [items, setItems] = useState<AssignmentItem[]>([])
+  const [todos, setTodos] = useState<Todo[]>([])
+  const [newTodo, setNewTodo] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<'todo' | 'done'>('todo')
 
-  return (
-    <div className="interactive-card flex items-center gap-3 rounded-[24px] px-4 py-4" {...spotlightProps}>
-      <input
-        type="checkbox"
-        checked={item.status === 'done'}
-        onChange={() => onToggle(item.id, item.status)}
-        className="relative z-10"
-        style={{ accentColor: 'var(--accent)' }}
-      />
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: assignmentData }, { data: todoData }] = await Promise.all([
+        supabase
+          .from('assignments')
+          .select('id, title, due_date, status, priority, subjects(name, color)')
+          .order('due_date', { ascending: true, nullsFirst: false }),
+        supabase.from('todos').select('id, title, done').order('created_at', { ascending: true }),
+      ])
+      setItems(((assignmentData || []) as RawAssignmentItem[]).map((item) => ({ ...item, subjects: pickJoined(item.subjects) })))
+      setTodos(todoData || [])
+      setLoading(false)
+    }
+    load()
+  }, [])
 
-      <div
-        className={`relative z-10 h-2.5 w-2.5 rounded-full ${
-          item.priority === 3 ? 'bg-red-400' : item.priority === 2 ? 'bg-amber-300' : 'bg-slate-400'
-        }`}
-      />
+  const toggleAssignment = async (item: AssignmentItem) => {
+    const status = item.status === 'done' ? 'todo' : 'done'
+    setItems((list) => list.map((entry) => entry.id === item.id ? { ...entry, status } : entry))
+    const { error } = await supabase.from('assignments').update({ status }).eq('id', item.id)
+    if (error) {
+      toast(error.message, 'error')
+      setItems((list) => list.map((entry) => entry.id === item.id ? { ...entry, status: item.status } : entry))
+    }
+  }
 
-      <div className="relative z-10 min-w-0 flex-1">
-        <p
-          className={`text-sm ${item.status === 'done' ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}
-        >
-          {item.title}
-        </p>
+  const addTodo = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const title = newTodo.trim()
+    if (!title) return
+    setNewTodo('')
+    const { data, error } = await supabase.from('todos').insert({ title }).select('id, title, done').single()
+    if (error || !data) { toast(error?.message || 'Could not add the to-do.', 'error'); setNewTodo(title); return }
+    setTodos((list) => [...list, data])
+  }
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+  const toggleTodo = async (todo: Todo) => {
+    setTodos((list) => list.map((entry) => entry.id === todo.id ? { ...entry, done: !todo.done } : entry))
+    const { error } = await supabase.from('todos').update({ done: !todo.done }).eq('id', todo.id)
+    if (error) {
+      toast(error.message, 'error')
+      setTodos((list) => list.map((entry) => entry.id === todo.id ? { ...entry, done: todo.done } : entry))
+    }
+  }
+
+  const deleteTodo = async (todo: Todo) => {
+    setTodos((list) => list.filter((entry) => entry.id !== todo.id))
+    const { error } = await supabase.from('todos').delete().eq('id', todo.id)
+    if (error) { toast(error.message, 'error'); setTodos((list) => [...list, todo]) }
+  }
+
+  const clearCompleted = async () => {
+    const done = todos.filter((todo) => todo.done)
+    if (done.length === 0) return
+    setTodos((list) => list.filter((todo) => !todo.done))
+    const { error } = await supabase.from('todos').delete().in('id', done.map((todo) => todo.id))
+    if (error) { toast(error.message, 'error'); setTodos((list) => [...list, ...done]) }
+  }
+
+  const openAssignments = items.filter((item) => item.status !== 'done')
+  const doneAssignments = items.filter((item) => item.status === 'done')
+  const openTodos = todos.filter((todo) => !todo.done)
+  const doneTodos = todos.filter((todo) => todo.done)
+  const total = items.length + todos.length
+  const totalDone = doneAssignments.length + doneTodos.length
+
+  const groups = [
+    { key: 'overdue', title: 'Overdue', tone: 'danger' as const, list: openAssignments.filter((item) => dueLabel(item.due_date).overdue) },
+    { key: 'soon', title: 'Next 3 days', list: openAssignments.filter((item) => dueLabel(item.due_date).soon) },
+    { key: 'later', title: 'Later', list: openAssignments.filter((item) => item.due_date && !dueLabel(item.due_date).overdue && !dueLabel(item.due_date).soon) },
+    { key: 'none', title: 'No due date', list: openAssignments.filter((item) => !item.due_date) },
+  ].filter((group) => group.list.length > 0)
+
+  const assignmentRow = (item: AssignmentItem) => {
+    const due = dueLabel(item.due_date)
+    const done = item.status === 'done'
+    return (
+      <li key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
+        <Checkbox checked={done} onChange={() => toggleAssignment(item)} label={`Mark ${item.title} ${done ? 'not done' : 'done'}`} />
+        <Link href={`/dashboard/assignments/${item.id}`} className="min-w-0 flex-1">
+          <span className={`block truncate text-sm ${done ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text)]'}`}>{item.title}</span>
           {item.subjects && (
-            <span
-              className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
-              style={{ backgroundColor: item.subjects.color }}
-            >
+            <span className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.subjects.color }} />
               {item.subjects.name}
             </span>
           )}
+        </Link>
+        {!done && item.due_date && (
+          <span className={`shrink-0 font-mono text-xs ${due.overdue ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{due.text}</span>
+        )}
+      </li>
+    )
+  }
 
-          {item.due_date && (
-            <span className={`text-[11px] ${isOverdue ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>
-              {isOverdue ? 'Overdue · ' : ''}
-              {new Date(item.due_date).toLocaleDateString()}
+  const todoRow = (todo: Todo) => (
+    <li key={todo.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
+      <Checkbox checked={todo.done} onChange={() => toggleTodo(todo)} label={`Mark ${todo.title} ${todo.done ? 'not done' : 'done'}`} />
+      <span className={`min-w-0 flex-1 truncate text-sm ${todo.done ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text)]'}`}>{todo.title}</span>
+      <button
+        onClick={() => deleteTodo(todo)}
+        aria-label={`Delete ${todo.title}`}
+        className="rounded-md p-1 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <X size={14} />
+      </button>
+    </li>
+  )
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        title="To-do"
+        description="Your assignments by due date, plus anything else you need to remember."
+        actions={!loading && total > 0 ? (
+          <span className="font-mono text-sm text-[var(--text-muted)]">{totalDone} of {total} done</span>
+        ) : undefined}
+      />
+
+      <form onSubmit={addTodo} className="glass-panel mb-6 flex items-center gap-2 rounded-2xl p-2 pl-4">
+        <Plus size={16} className="shrink-0 text-[var(--text-muted)]" />
+        <label htmlFor="new-todo" className="sr-only">New to-do</label>
+        <input
+          id="new-todo"
+          value={newTodo}
+          onChange={(event) => setNewTodo(event.target.value)}
+          placeholder="Add a to-do, e.g. Return library book"
+          className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+        />
+        <button type="submit" disabled={!newTodo.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Add</button>
+      </form>
+
+      <div role="tablist" aria-label="Show" className="mb-6 inline-flex rounded-xl border bg-[var(--surface)] p-1">
+        {(['todo', 'done'] as const).map((key) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`rounded-lg px-3 py-1.5 text-sm ${tab === key ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
+          >
+            {key === 'todo' ? 'To do' : 'Done'}
+            <span className="ml-1.5 font-mono text-xs text-[var(--text-muted)]">
+              {key === 'todo' ? openAssignments.length + openTodos.length : totalDone}
             </span>
-          )}
-        </div>
+          </button>
+        ))}
       </div>
+
+      {loading ? (
+        <div className="space-y-2">{[0, 1, 2, 3].map((row) => <div key={row} className="skeleton h-12 rounded-xl" />)}</div>
+      ) : tab === 'todo' ? (
+        openAssignments.length + openTodos.length === 0 ? (
+          <div className="empty-card rounded-2xl px-6 py-14 text-center">
+            <p className="text-sm font-medium text-[var(--text)]">All clear</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Nothing left to do. Add something above if you think of it.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {openTodos.length > 0 && <Group title="Your to-dos">{openTodos.map(todoRow)}</Group>}
+            {groups.map((group) => (
+              <Group key={group.key} title={group.title} tone={group.tone}>{group.list.map(assignmentRow)}</Group>
+            ))}
+          </div>
+        )
+      ) : totalDone === 0 ? (
+        <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <p className="text-sm text-[var(--text-muted)]">Finished items will show up here.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {doneTodos.length > 0 && (
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-sm font-medium text-[var(--text-muted)]">Your to-dos</h2>
+                <button onClick={clearCompleted} className="text-xs text-[var(--text-muted)] hover:text-[var(--danger)]">Clear finished</button>
+              </div>
+              <ul className="glass-panel divide-y overflow-hidden rounded-2xl">{doneTodos.map(todoRow)}</ul>
+            </section>
+          )}
+          {doneAssignments.length > 0 && <Group title="Assignments">{doneAssignments.map(assignmentRow)}</Group>}
+        </div>
+      )}
     </div>
   )
 }

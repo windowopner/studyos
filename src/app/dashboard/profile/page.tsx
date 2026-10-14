@@ -2,17 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { spotlightProps } from '@/lib/spotlight'
+import { Camera, Check, CheckCircle, GoogleLogo } from '@phosphor-icons/react'
+import { connectGoogle, disconnectGoogle } from '@/lib/google'
+import { useGoogleConnected } from '@/lib/use-google'
+import { toast } from '@/components/toaster'
+import PageHeader from '@/components/page-header'
+import Field, { inputClass } from '@/components/field'
 
 export default function ProfilePage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
-  const [plan, setPlan] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const googleConnected = useGoogleConnected()
 
   useEffect(() => {
     const load = async () => {
@@ -25,7 +30,6 @@ export default function ProfilePage() {
       if (data) {
         setName(data.name || '')
         setAvatarUrl(data.avatar_url || '')
-        setPlan(data.plan || 'free')
       }
     }
 
@@ -47,7 +51,7 @@ export default function ProfilePage() {
     const path = `avatars/${user.id}.${ext}`
     const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
     if (error) {
-      alert(`Upload failed: ${error.message}`)
+      toast(`Upload failed: ${error.message}`, 'error')
       setUploading(false)
       return
     }
@@ -66,78 +70,89 @@ export default function ProfilePage() {
       return
     }
 
-    await supabase.from('profiles').update({ name }).eq('id', user.id)
+    const { error } = await supabase.from('profiles').update({ name: name.trim() }).eq('id', user.id)
     setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const handleDisconnect = async () => {
+    await disconnectGoogle()
+    window.location.reload()
+  }
+
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <p className="page-kicker">Profile</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Profile</h1>
-      </div>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader title="Profile" />
 
-      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-          <div className="interactive-card relative h-24 w-24 rounded-[28px]" {...spotlightProps}>
+      <section className="glass-panel rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-5">
+          <button
+            onClick={() => fileRef.current?.click()}
+            aria-label="Change photo"
+            className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl"
+          >
             {avatarUrl ? (
-              <img src={avatarUrl} alt="avatar" className="absolute inset-0 h-full w-full rounded-[28px] object-cover" />
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center rounded-[28px] bg-[rgb(var(--accent-rgb)_/_0.18)] text-3xl font-semibold text-[var(--text)]">
+              <span className="flex h-full w-full items-center justify-center bg-[var(--surface-soft)] text-2xl font-semibold text-[var(--text)]">
                 {name?.[0] || '?'}
-              </div>
+              </span>
             )}
-
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="absolute inset-0 flex items-center justify-center rounded-[28px] bg-black/45 text-xs font-semibold text-white opacity-0 transition hover:opacity-100"
-            >
-              {uploading ? 'Uploading...' : 'Change'}
-            </button>
-
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-          </div>
-
-          <div>
-            <p className="text-xl font-semibold text-[var(--text)]">{name || 'Your profile'}</p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">{email}</p>
-            <span className="soft-badge mt-3 rounded-full px-3 py-1.5 text-xs font-medium capitalize">
-              {plan} plan
+            <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              {uploading ? <span className="text-xs">Uploading…</span> : <Camera size={20} />}
             </span>
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+
+          <div className="min-w-0">
+            <p className="truncate text-lg font-semibold text-[var(--text)]">{name || 'Your profile'}</p>
+            <p className="truncate text-sm text-[var(--text-muted)]">{email}</p>
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4">
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-muted)]">Display Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="field-input w-full rounded-2xl px-4 py-3 text-sm"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-muted)]">Email</span>
-            <input
-              type="text"
-              value={email}
-              disabled
-              className="field-input w-full cursor-not-allowed rounded-2xl px-4 py-3 text-sm opacity-60"
-            />
-          </label>
-
-          <div className="pt-2">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-40"
-            >
-              {saved ? 'Saved ✓' : saving ? 'Saving...' : 'Save Changes'}
+        <form onSubmit={(event) => { event.preventDefault(); handleSave() }} className="mt-6 flex flex-col gap-5 border-t pt-6">
+          <Field label="Display name" htmlFor="display-name">
+            <input id="display-name" value={name} onChange={(event) => setName(event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Email" htmlFor="email" hint="Comes from your Google account.">
+            <input id="email" value={email} disabled className={`${inputClass} cursor-not-allowed opacity-60`} />
+          </Field>
+          <div>
+            <button type="submit" disabled={saving} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+              {saved ? <><Check size={16} weight="bold" /> Saved</> : saving ? 'Saving…' : 'Save changes'}
             </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="glass-panel mt-6 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-start gap-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-[var(--text-muted)]">
+            <GoogleLogo size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-[var(--text)]">Google Classroom</h2>
+            <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">
+              Optional. Connecting lets StudyOS import Classroom assignments and create Google Docs or Slides.
+              Some school accounts block this; everything else works without it.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {googleConnected ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 text-sm text-[var(--success)]">
+                    <CheckCircle size={16} weight="fill" />
+                    Connected in this browser for the next hour
+                  </span>
+                  <button onClick={handleDisconnect} className="ghost-button text-sm underline-offset-2 hover:underline">Disconnect</button>
+                </>
+              ) : (
+                <button onClick={() => connectGoogle('/dashboard/profile')} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                  Connect Google
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </section>

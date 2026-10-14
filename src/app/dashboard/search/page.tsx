@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { pickJoined, type JoinedRelation } from '@/lib/relations'
-import { spotlightProps } from '@/lib/spotlight'
+import { Cards, ClipboardText, MagnifyingGlass, NotePencil, X } from '@phosphor-icons/react'
+import PageHeader from '@/components/page-header'
 
 type SubjectData = {
   name: string
@@ -50,12 +51,33 @@ type RawDeckResult = Omit<DeckResult, 'subjects'> & {
 }
 
 const statusLabel: Record<string, string> = {
-  todo: 'To Do',
-  in_progress: 'In Progress',
+  todo: 'To do',
+  in_progress: 'In progress',
   done: 'Done',
 }
 
-const quickQueries = ['lecture', 'quiz', 'summary', 'flashcards']
+// Wraps the parts of `text` that match `query` in <mark>.
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim()
+  if (!q) return <>{text}</>
+  const parts = text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'))
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.toLowerCase() === q.toLowerCase()
+          ? <mark key={index} className="rounded-sm bg-[rgb(var(--accent-rgb)/0.2)] px-0.5 text-[var(--text)]">{part}</mark>
+          : <span key={index}>{part}</span>
+      )}
+    </>
+  )
+}
+
+// A short excerpt of `text` around the first match, so the match is visible.
+function excerpt(text: string, query: string, length = 140) {
+  const index = text.toLowerCase().indexOf(query.trim().toLowerCase())
+  if (index < 40) return text.slice(0, length)
+  return '…' + text.slice(index - 40, index - 40 + length)
+}
 
 export default function SearchPage() {
   const router = useRouter()
@@ -66,6 +88,7 @@ export default function SearchPage() {
   const [decks, setDecks] = useState<DeckResult[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [active, setActive] = useState(0)
   const hasQuery = query.trim().length > 0
 
   useEffect(() => {
@@ -73,12 +96,14 @@ export default function SearchPage() {
   }, [])
 
   useEffect(() => {
-    const trimmed = query.trim()
+    // Commas, parentheses, and wildcards have meaning inside PostgREST filters, so they're stripped.
+    const trimmed = query.replace(/[,()*%\\]/g, ' ').trim()
 
     if (!trimmed) {
       return
     }
 
+    let stale = false
     const timer = setTimeout(async () => {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
@@ -127,6 +152,8 @@ export default function SearchPage() {
         if (!mergedNotes.find((item) => item.id === note.id)) mergedNotes.push(note)
       }
 
+      if (stale) return
+      setActive(0)
       setNotes(mergedNotes.slice(0, 8))
       setAssignments(((assignmentsRes.data || []) as RawAssignmentResult[]).map((assignment) => ({
         ...assignment,
@@ -140,229 +167,155 @@ export default function SearchPage() {
       setLoading(false)
     }, 250)
 
-    return () => clearTimeout(timer)
+    return () => { stale = true; clearTimeout(timer) }
   }, [query])
 
   const total = notes.length + assignments.length + decks.length
 
+  // One flat list for keyboard navigation: arrow keys move, Enter opens.
+  const flat = [
+    ...notes.map((note) => `/dashboard/notes/${note.id}`),
+    ...assignments.map((assignment) => `/dashboard/assignments/${assignment.id}`),
+    ...decks.map((deck) => `/dashboard/flashcards/${deck.id}`),
+  ]
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (!flat.length) return
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActive((index) => (index + 1) % flat.length) }
+    if (event.key === 'ArrowUp') { event.preventDefault(); setActive((index) => (index - 1 + flat.length) % flat.length) }
+    if (event.key === 'Enter') { event.preventDefault(); router.push(flat[active]) }
+  }
+
+  const rowClass = (index: number) =>
+    `flex w-full items-start gap-3 px-4 py-3 text-left ${index === active ? 'bg-[var(--surface-hover)]' : 'hover:bg-[var(--surface-hover)]'}`
+
+  const subjectDot = (subject: SubjectBadge) => subject && (
+    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: subject.color }} />
+      {subject.name}
+    </span>
+  )
+
   return (
-    <div className="mx-auto max-w-5xl">
-      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="page-kicker">Search</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Search</h1>
-            <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
-              Find notes, assignments, and flashcards.
-            </p>
-          </div>
+    <div className="mx-auto max-w-3xl">
+      <PageHeader title="Search" />
 
-          <div className="flex flex-wrap gap-2">
-            {quickQueries.map((item) => (
-              <button
-                key={item}
-                onClick={() => setQuery(item)}
-                className="secondary-button rounded-full px-3 py-1.5 text-xs font-medium"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="glass-panel flex items-center gap-3 rounded-2xl px-4 focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgb(var(--accent-rgb)/0.14)]">
+        <MagnifyingGlass size={18} className="shrink-0 text-[var(--text-muted)]" />
+        <label htmlFor="search" className="sr-only">Search</label>
+        <input
+          id="search"
+          ref={inputRef}
+          type="text"
+          value={query}
+          onKeyDown={onKeyDown}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            setQuery(nextValue)
+            if (!nextValue.trim()) {
+              setLoading(false)
+              setSearched(false)
+            }
+          }}
+          placeholder="Notes, assignments, flashcards"
+          className="min-w-0 flex-1 bg-transparent py-3.5 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+        />
+        {loading && <span className="font-mono text-xs text-[var(--text-muted)]">Searching…</span>}
+        {!loading && query && (
+          <button onClick={() => { setQuery(''); setSearched(false); inputRef.current?.focus() }} aria-label="Clear search" className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X size={16} />
+          </button>
+        )}
+      </div>
 
-        <div className="mt-6">
-          <div className="interactive-card rounded-[26px] px-4 py-3 sm:px-5" {...spotlightProps}>
-            <div className="relative z-10 flex items-center gap-3">
-              <span className="text-lg text-[var(--text-muted)]">⌕</span>
-              <input
-                ref={inputRef}
-                type="text"
-                value={query}
-                onChange={(event) => {
-                  const nextValue = event.target.value
-                  setQuery(nextValue)
-                  if (!nextValue.trim()) {
-                    setLoading(false)
-                    setSearched(false)
-                  }
-                }}
-                placeholder="Search notes, assignments, flashcards..."
-                className="field-input w-full border-0 bg-transparent px-0 py-2 text-sm shadow-none focus-visible:shadow-none"
-              />
-
-              {loading && (
-                <span className="text-xs text-[var(--text-muted)]">Searching...</span>
-              )}
-
-              {!loading && query && (
-                <button
-                  onClick={() => setQuery('')}
-                  className="ghost-button text-sm font-medium"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-              {hasQuery && searched ? `${total} result${total === 1 ? '' : 's'}` : 'Search to begin'}
-            </span>
-            <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-              Notes · Assignments · Flashcards
-            </span>
-          </div>
-        </div>
-      </section>
+      {!hasQuery && (
+        <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
+          Searches titles, note text, assignment descriptions, and tags. Use the arrow keys and Enter to open a result.
+        </p>
+      )}
 
       {hasQuery && searched && !loading && total === 0 && (
-        <div className="empty-card mt-6 rounded-[28px] px-6 py-12 text-center">
-          <p className="text-sm text-[var(--text-muted)]">
-            No results for &ldquo;{query}&rdquo;
-          </p>
+        <div className="empty-card mt-6 rounded-2xl px-6 py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)]">No results for &ldquo;{query}&rdquo;</p>
         </div>
       )}
 
       {hasQuery && notes.length > 0 && (
         <section className="mt-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="section-label">Notes · {notes.length}</h2>
-          </div>
-
-          <div className="space-y-3">
-            {notes.map((note) => (
-              <button
-                key={note.id}
-                onClick={() => router.push(`/dashboard/notes/${note.id}`)}
-                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
-                {...spotlightProps}
-              >
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[var(--text)]">{note.title}</span>
-                    {note.subjects && (
-                      <span
-                        className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
-                        style={{ backgroundColor: note.subjects.color }}
-                      >
-                        {note.subjects.name}
+          <h2 className="mb-2 text-sm font-medium text-[var(--text-muted)]">Notes</h2>
+          <ul className="glass-panel divide-y overflow-hidden rounded-2xl">
+            {notes.map((note, position) => {
+              const row = position
+              return (
+                <li key={note.id}>
+                  <button onClick={() => router.push(`/dashboard/notes/${note.id}`)} onMouseEnter={() => setActive(row)} className={rowClass(row)}>
+                    <NotePencil size={16} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-sm font-medium text-[var(--text)]"><Highlight text={note.title} query={query} /></span>
+                        {subjectDot(note.subjects)}
                       </span>
-                    )}
-                  </div>
-
-                  {note.content && (
-                    <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
-                      {note.content.slice(0, 140)}
-                    </p>
-                  )}
-
-                  {note.tags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {note.tags.slice(0, 4).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] text-[var(--text-muted)]"
-                        >
-                          {tag}
+                      {note.content && (
+                        <span className="mt-1 block line-clamp-2 text-xs leading-relaxed text-[var(--text-muted)]">
+                          <Highlight text={excerpt(note.content, query)} query={query} />
                         </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 
       {hasQuery && assignments.length > 0 && (
         <section className="mt-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="section-label">Assignments · {assignments.length}</h2>
-          </div>
-
-          <div className="space-y-3">
-            {assignments.map((assignment) => (
-              <button
-                key={assignment.id}
-                onClick={() => router.push(`/dashboard/assignments/${assignment.id}`)}
-                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
-                {...spotlightProps}
-              >
-                <div className="relative z-10 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--text)]">{assignment.title}</span>
-                      {assignment.subjects && (
-                        <span
-                          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
-                          style={{ backgroundColor: assignment.subjects.color }}
-                        >
-                          {assignment.subjects.name}
+          <h2 className="mb-2 text-sm font-medium text-[var(--text-muted)]">Assignments</h2>
+          <ul className="glass-panel divide-y overflow-hidden rounded-2xl">
+            {assignments.map((assignment, position) => {
+              const row = notes.length + position
+              return (
+                <li key={assignment.id}>
+                  <button onClick={() => router.push(`/dashboard/assignments/${assignment.id}`)} onMouseEnter={() => setActive(row)} className={rowClass(row)}>
+                    <ClipboardText size={16} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-sm font-medium text-[var(--text)]"><Highlight text={assignment.title} query={query} /></span>
+                        {subjectDot(assignment.subjects)}
+                      </span>
+                      {assignment.description && (
+                        <span className="mt-1 block line-clamp-2 text-xs leading-relaxed text-[var(--text-muted)]">
+                          <Highlight text={excerpt(assignment.description, query)} query={query} />
                         </span>
                       )}
-                    </div>
-
-                    {assignment.description && (
-                      <p className="mt-2 text-xs leading-6 text-[var(--text-muted)]">
-                        {assignment.description.slice(0, 140)}
-                      </p>
-                    )}
-
-                    {assignment.due_date && (
-                      <p className="mt-2 text-[11px] text-[var(--text-muted)]">
-                        Due {new Date(assignment.due_date).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-
-                  <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
-                    {statusLabel[assignment.status] ?? assignment.status}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+                    </span>
+                    <span className="shrink-0 text-xs text-[var(--text-muted)]">{statusLabel[assignment.status] ?? assignment.status}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 
       {hasQuery && decks.length > 0 && (
         <section className="mt-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="section-label">Flashcards · {decks.length}</h2>
-          </div>
-
-          <div className="space-y-3">
-            {decks.map((deck) => (
-              <button
-                key={deck.id}
-                onClick={() => router.push(`/dashboard/flashcards/${deck.id}`)}
-                className="interactive-card w-full rounded-[24px] px-4 py-4 text-left"
-                {...spotlightProps}
-              >
-                <div className="relative z-10 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--text)]">{deck.title}</span>
-                      {deck.subjects && (
-                        <span
-                          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
-                          style={{ backgroundColor: deck.subjects.color }}
-                        >
-                          {deck.subjects.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
-                    {deck.flashcards?.[0]?.count ?? 0} cards
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+          <h2 className="mb-2 text-sm font-medium text-[var(--text-muted)]">Flashcards</h2>
+          <ul className="glass-panel divide-y overflow-hidden rounded-2xl">
+            {decks.map((deck, position) => {
+              const row = notes.length + assignments.length + position
+              return (
+                <li key={deck.id}>
+                  <button onClick={() => router.push(`/dashboard/flashcards/${deck.id}`)} onMouseEnter={() => setActive(row)} className={rowClass(row)}>
+                    <Cards size={16} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                    <span className="min-w-0 flex-1 text-sm font-medium text-[var(--text)]"><Highlight text={deck.title} query={query} /></span>
+                    <span className="shrink-0 font-mono text-xs text-[var(--text-muted)]">{deck.flashcards?.[0]?.count ?? 0} cards</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
     </div>

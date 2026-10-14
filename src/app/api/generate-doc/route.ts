@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { askClaude } from '@/lib/ai'
+import { requireGoogleToken } from '@/lib/google-server'
 
 export const maxDuration = 60
 
-export async function POST(req: Request) {
-  const cookieStore = await cookies()
-  const accessToken = cookieStore.get('google_access_token')?.value
+type PageElement = { objectId: string; shape?: { placeholder?: { type?: string } } }
 
-  if (!accessToken) {
-    return NextResponse.json({ error: 'No access token' }, { status: 401 })
-  }
+export async function POST(req: Request) {
+  const google = await requireGoogleToken()
+  if (!google.ok) return google.response
+  const accessToken = google.token
 
   const { title, description, type, slideCount = 6 } = await req.json()
 
@@ -32,27 +32,13 @@ Assignment instructions: ${description || 'No description'}
 Write the full submission directly. Do not describe what you will write or list instructions. Just write the actual content.
 Plain text only, no markdown.`
 
-  const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [{ role: 'user', content: type === 'slides' ? slidePrompt : docPrompt }],
-    }),
+  const result = await askClaude({
+    max_tokens: 4000,
+    messages: [{ role: 'user', content: type === 'slides' ? slidePrompt : docPrompt }],
   })
+  if (!result.ok) return result.response
 
-  const aiData = await aiRes.json()
-
-  if (!aiData.content?.[0]?.text) {
-    return NextResponse.json({ error: 'AI failed', detail: aiData }, { status: 500 })
-  }
-
-  const raw = aiData.content[0].text.trim()
+  const raw = result.text.trim()
 
   if (type === 'slides') {
     let slides: { title: string; body: string }[] = []
@@ -76,10 +62,10 @@ Plain text only, no markdown.`
     slides.forEach((slide, i) => {
       if (i === 0) {
         const titleEl = presentation.slides[0].pageElements?.find(
-          (el: any) => el.shape?.placeholder?.type === 'CENTERED_TITLE' || el.shape?.placeholder?.type === 'TITLE'
+          (el: PageElement) => el.shape?.placeholder?.type === 'CENTERED_TITLE' || el.shape?.placeholder?.type === 'TITLE'
         )
         const bodyEl = presentation.slides[0].pageElements?.find(
-          (el: any) => el.shape?.placeholder?.type === 'BODY' || el.shape?.placeholder?.type === 'SUBTITLE'
+          (el: PageElement) => el.shape?.placeholder?.type === 'BODY' || el.shape?.placeholder?.type === 'SUBTITLE'
         )
         if (titleEl) requests.push({ insertText: { objectId: titleEl.objectId, text: slide.title } })
         if (bodyEl) requests.push({ insertText: { objectId: bodyEl.objectId, text: slide.body } })

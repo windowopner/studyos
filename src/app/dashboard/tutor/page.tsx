@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { spotlightProps } from '@/lib/spotlight'
+import { ArrowUp, ChatCircleText, Plus, WarningCircle, X } from '@phosphor-icons/react'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type Assignment = { id: string; title: string; description: string | null }
@@ -24,6 +24,8 @@ function TutorContent() {
   const [selectedNote, setSelectedNote] = useState(noteId || '')
   const [chats, setChats] = useState<Chat[]>([])
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const assignment = useMemo(
@@ -55,16 +57,20 @@ function TutorContent() {
       .order('created_at', { ascending: false })
       .limit(20)
       .then(({ data }) => setChats(data || []))
+
+    fetch('/api/ai-status').then((response) => response.json()).then((data) => setAiConfigured(!!data.configured)).catch(() => {})
   }, [])
 
   const loadChat = (chat: Chat) => {
     setCurrentChatId(chat.id)
-    setMessages(chat.messages)
+    setMessages(chat.messages.filter((message) => typeof message.content === 'string'))
+    setError('')
   }
 
   const newChat = () => {
     setCurrentChatId(null)
     setMessages([])
+    setError('')
     setSelectedAssignment('')
     setSelectedNote('')
   }
@@ -81,13 +87,15 @@ function TutorContent() {
   }, [messages])
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return
+    const text = input.trim()
+    if (!text || loading) return
 
-    const userMessage: Message = { role: 'user', content: input }
+    const userMessage: Message = { role: 'user', content: text }
     const newMessages = [...messages, userMessage]
 
     setMessages(newMessages)
     setInput('')
+    setError('')
     setLoading(true)
 
     const response = await fetch('/api/tutor', {
@@ -95,12 +103,17 @@ function TutorContent() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: newMessages, assignment, note }),
     })
-
-    const data = await response.json()
-    const updatedMessages = [...newMessages, { role: 'assistant' as const, content: data.reply }]
-
-    setMessages(updatedMessages)
+    const data = await response.json().catch(() => ({}))
     setLoading(false)
+
+    // On failure the question stays on screen, but nothing is saved to the chat history.
+    if (!response.ok || !data.reply) {
+      setError(data.error || 'The tutor could not answer. Try again.')
+      return
+    }
+
+    const updatedMessages = [...newMessages, { role: 'assistant' as const, content: data.reply }]
+    setMessages(updatedMessages)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -127,142 +140,148 @@ function TutorContent() {
   }
 
   return (
-    <div className="grid min-h-[70vh] gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="glass-panel rounded-[30px] px-4 py-4">
-        <button onClick={newChat} className="primary-button w-full rounded-2xl px-4 py-3 text-sm font-semibold">
-          New Chat
+    <div className="grid gap-4 lg:h-[calc(100dvh-5rem)] lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col">
+        <button onClick={newChat} className="secondary-button w-full rounded-xl px-4 py-2 text-sm font-medium">
+          <Plus size={16} />
+          New chat
         </button>
-
-        <div className="mt-4 space-y-2 overflow-y-auto pr-1">
+        <p className="mb-2 mt-5 px-1 text-xs font-medium text-[var(--text-muted)]">Recent</p>
+        <ul className="-mx-1 flex-1 space-y-0.5 overflow-y-auto">
+          {chats.length === 0 && <li className="px-2 py-2 text-xs text-[var(--text-muted)]">Your chats will be listed here.</li>}
           {chats.map((chat) => {
             const active = currentChatId === chat.id
-
             return (
-              <button
-                key={chat.id}
-                onClick={() => loadChat(chat)}
-                className="interactive-card flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left"
-                {...spotlightProps}
-                style={active ? {
-                  background: 'linear-gradient(135deg, rgb(var(--accent-rgb) / 0.18), var(--surface))',
-                  borderColor: 'var(--border-strong)',
-                } : undefined}
-              >
-                <span className="relative z-10 truncate pr-2 text-xs font-medium text-[var(--text)]">
-                  {chat.title || 'Untitled'}
-                </span>
-                <span
-                  onClick={(event) => deleteChat(chat.id, event)}
-                  className="relative z-10 text-xs text-red-400 hover:text-red-300"
+              <li key={chat.id} className="group relative">
+                <button
+                  onClick={() => loadChat(chat)}
+                  className={`w-full truncate rounded-lg py-2 pl-3 pr-8 text-left text-sm ${
+                    active ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]' : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
+                  }`}
                 >
-                  ×
-                </span>
-              </button>
+                  {chat.title || 'Untitled'}
+                </button>
+                <button
+                  onClick={(event) => deleteChat(chat.id, event)}
+                  aria-label="Delete chat"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X size={12} />
+                </button>
+              </li>
             )
           })}
-        </div>
+        </ul>
       </aside>
 
-      <section className="glass-panel flex min-w-0 flex-col rounded-[30px] px-5 py-5 sm:px-6">
-        <div className="mb-5 flex flex-col gap-4">
-          <div>
-            <p className="page-kicker">AI Tutor</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">AI Tutor</h1>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <select
-              value={selectedAssignment}
-              onChange={(event) => setSelectedAssignment(event.target.value)}
-              className="field-input rounded-2xl px-4 py-3 text-sm"
-            >
-              <option value="">No assignment context</option>
-              {assignments.map((item) => (
-                <option key={item.id} value={item.id}>{item.title}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedNote}
-              onChange={(event) => setSelectedNote(event.target.value)}
-              className="field-input rounded-2xl px-4 py-3 text-sm"
-            >
-              <option value="">No note context</option>
-              {notes.map((item) => (
-                <option key={item.id} value={item.id}>{item.title}</option>
-              ))}
-            </select>
-          </div>
-
-          {(assignment || note) && (
-            <div className="soft-badge w-fit rounded-full px-3 py-1.5 text-xs font-medium">
-              Context:
-              {assignment && <span className="text-[var(--text)]">{assignment.title}</span>}
-              {assignment && note && <span className="text-[var(--text)]">+</span>}
-              {note && <span className="text-[var(--text)]">{note.title}</span>}
-            </div>
-          )}
+      <section className="glass-panel flex min-h-[70dvh] min-w-0 flex-col rounded-2xl lg:min-h-0">
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 sm:px-5">
+          <h1 className="mr-auto text-base font-semibold text-[var(--text)]">AI Tutor</h1>
+          <label htmlFor="ctx-assignment" className="sr-only">Assignment context</label>
+          <select
+            id="ctx-assignment"
+            value={selectedAssignment}
+            onChange={(event) => setSelectedAssignment(event.target.value)}
+            className="field-input max-w-[12rem] rounded-lg px-2.5 py-1.5 text-xs"
+          >
+            <option value="">No assignment</option>
+            {assignments.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select>
+          <label htmlFor="ctx-note" className="sr-only">Note context</label>
+          <select
+            id="ctx-note"
+            value={selectedNote}
+            onChange={(event) => setSelectedNote(event.target.value)}
+            className="field-input max-w-[12rem] rounded-lg px-2.5 py-1.5 text-xs"
+          >
+            <option value="">No note</option>
+            {notes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto pb-4">
+        {aiConfigured === false && (
+          <div className="mx-4 mt-4 flex items-start gap-2 rounded-xl bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)] sm:mx-5">
+            <WarningCircle size={18} className="mt-0.5 shrink-0" />
+            AI is off until an Anthropic API key is added. Everything else in StudyOS still works.
+          </div>
+        )}
+
+        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6">
           {messages.length === 0 && (
-            <div className="empty-card rounded-[28px] px-6 py-10 text-center">
-              <p className="text-sm text-[var(--text-muted)]">
-                Ask anything. Select an assignment or note if you want extra context.
-              </p>
+            <div className="mx-auto max-w-sm py-10 text-center">
+              <ChatCircleText size={28} className="mx-auto text-[var(--text-muted)]" />
+              <p className="mt-3 text-sm font-medium text-[var(--text)]">Ask about anything you&apos;re studying</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Pick an assignment or a note above and the tutor will read it first.</p>
             </div>
           )}
 
           {messages.map((message, index) => (
-            <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className="max-w-[85%] rounded-[24px] px-4 py-3 text-sm leading-7"
-                style={message.role === 'user'
-                  ? {
-                    background: 'linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-secondary-rgb)))',
-                    color: '#07111f',
-                  }
-                  : {
-                    background: 'var(--surface)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                  }}
-              >
-                {message.content}
+            message.role === 'user' ? (
+              <div key={index} className="flex justify-end">
+                <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-[var(--accent)] px-4 py-2.5 text-sm leading-relaxed text-[var(--on-accent)]">
+                  {message.content}
+                </p>
               </div>
-            </div>
+            ) : (
+              <div key={index} className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-[var(--accent)]">
+                  <ChatCircleText size={15} />
+                </span>
+                <p className="max-w-[68ch] whitespace-pre-wrap pt-0.5 text-[15px] leading-relaxed text-[var(--text)]">{message.content}</p>
+              </div>
+            )
           ))}
 
           {loading && (
-            <div className="flex justify-start">
-              <div className="interactive-card rounded-[24px] px-4 py-3 text-sm text-[var(--text-muted)]" {...spotlightProps}>
-                <span className="relative z-10">Thinking...</span>
-              </div>
+            <div className="flex gap-3" aria-live="polite">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-[var(--accent)]">
+                <ChatCircleText size={15} />
+              </span>
+              <span className="flex items-center gap-1 pt-1" aria-label="The tutor is typing">
+                {[0, 1, 2].map((dot) => (
+                  <span key={dot} className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--text-muted)]" style={{ animationDelay: `${dot * 160}ms` }} />
+                ))}
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div role="alert" className="flex items-start gap-2 rounded-xl bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
+              <WarningCircle size={18} className="mt-0.5 shrink-0" />
+              {error}
             </div>
           )}
 
           <div ref={bottomRef} />
         </div>
 
-        <div className="interactive-card mt-2 rounded-[26px] px-4 py-3" {...spotlightProps}>
-          <div className="relative z-10 flex gap-3">
-            <input
-              type="text"
-              placeholder="Ask a question..."
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => event.key === 'Enter' && handleSend()}
-              className="field-input w-full border-0 bg-transparent px-0 py-2 text-sm shadow-none focus-visible:shadow-none"
-            />
-            <button
-              onClick={handleSend}
-              disabled={loading || !input.trim()}
-              className="primary-button rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
-            >
-              Send
-            </button>
-          </div>
-        </div>
+        <form
+          onSubmit={(event) => { event.preventDefault(); handleSend() }}
+          className="m-3 flex items-end gap-2 rounded-xl border bg-[var(--background)] p-2 focus-within:border-[var(--accent)] sm:m-4"
+        >
+          <label htmlFor="tutor-input" className="sr-only">Message</label>
+          <textarea
+            id="tutor-input"
+            rows={1}
+            placeholder="Ask a question"
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value)
+              event.target.style.height = 'auto'
+              event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                handleSend()
+              }
+            }}
+            className="max-h-40 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+          />
+          <button type="submit" disabled={loading || !input.trim()} aria-label="Send" className="primary-button h-9 w-9 shrink-0 rounded-lg">
+            <ArrowUp size={16} weight="bold" />
+          </button>
+        </form>
       </section>
     </div>
   )

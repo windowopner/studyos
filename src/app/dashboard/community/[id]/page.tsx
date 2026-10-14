@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { toast } from '@/components/toaster'
+import { ArrowLeft, ChartBar, DownloadSimple, FileText, LinkSimple, Paperclip, PushPin, Smiley, Trash, X } from '@phosphor-icons/react'
 
 // ── Types ─────────────────────────────────────────────────────────────
 type Message = {
@@ -63,8 +65,8 @@ const MSG_SELECT = 'id, content, created_at, profile_id, deleted_at, file_url, f
 function LinkPreview({ url }: { url: string }) {
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
-      className="block mt-2 border rounded-lg p-3 bg-white hover:bg-gray-50 transition max-w-xs">
-      <p className="text-xs text-blue-500 truncate">{url}</p>
+      className="block mt-2 border rounded-lg p-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition max-w-xs">
+      <p className="text-xs text-[var(--accent)] truncate">{url}</p>
     </a>
   )
 }
@@ -88,9 +90,9 @@ function MessageContent({ message, isMe }: { message: Message; isMe: boolean }) 
         <div>
           {message.content && <p className="text-sm mb-2">{message.content}</p>}
           <a href={message.file_url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 border rounded-lg p-3 bg-white hover:bg-gray-50 transition">
-            <span className="text-red-500 text-lg">📄</span>
-            <span className="text-xs text-gray-700 truncate">{message.file_name}</span>
+            className="flex items-center gap-2 border rounded-lg p-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition">
+            <FileText size={20} className="text-[var(--danger)]" />
+            <span className="text-xs text-[var(--text)] truncate">{message.file_name}</span>
           </a>
         </div>
       )
@@ -104,7 +106,7 @@ function MessageContent({ message, isMe }: { message: Message; isMe: boolean }) 
         {parts.map((part, i) =>
           urlRegex.test(part)
             ? <a key={i} href={part} target="_blank" rel="noopener noreferrer"
-                className={`underline ${isMe ? 'text-blue-300' : 'text-blue-500'}`}>{part}</a>
+                className={`underline ${isMe ? 'text-[var(--accent)]' : 'text-[var(--accent)]'}`}>{part}</a>
             : part
         )}
       </p>
@@ -119,8 +121,8 @@ function PollCard({ poll, counts, myVote, totalVotes, onVote }: {
   myVote: number | null; totalVotes: number; onVote: (i: number) => void
 }) {
   return (
-    <div className="bg-white border rounded-xl p-3 min-w-[180px] max-w-xs">
-      <p className="text-sm font-medium text-gray-800 mb-3">{poll.question}</p>
+    <div className="bg-[var(--surface)] border rounded-xl p-3 min-w-[180px] max-w-xs">
+      <p className="text-sm font-medium text-[var(--text)] mb-3">{poll.question}</p>
       <div className="flex flex-col gap-2">
         {poll.options.map((opt, i) => {
           const pct = totalVotes > 0 ? Math.round(((counts[i] || 0) / totalVotes) * 100) : 0
@@ -128,18 +130,18 @@ function PollCard({ poll, counts, myVote, totalVotes, onVote }: {
           return (
             <button key={i} onClick={() => onVote(i)}
               className={`relative text-left rounded-lg px-3 py-2 text-xs border overflow-hidden transition ${
-                isMyVote ? 'border-gray-800' : 'border-gray-200 hover:border-gray-400'}`}>
-              <div className={`absolute inset-y-0 left-0 ${isMyVote ? 'bg-gray-200' : 'bg-gray-100'} transition-all`}
+                isMyVote ? 'border-[var(--border-strong)]' : 'border-[var(--border)] hover:border-[var(--border-strong)]'}`}>
+              <div className={`absolute inset-y-0 left-0 ${isMyVote ? 'bg-[var(--border)]' : 'bg-[var(--surface-soft)]'} transition-all`}
                 style={{ width: `${pct}%` }} />
               <span className="relative flex items-center justify-between gap-2">
-                <span className="text-gray-800">{opt}</span>
-                <span className="text-gray-400 flex-shrink-0">{pct}%</span>
+                <span className="text-[var(--text)]">{opt}</span>
+                <span className="text-[var(--text-muted)] flex-shrink-0">{pct}%</span>
               </span>
             </button>
           )
         })}
       </div>
-      <p className="text-xs text-gray-400 mt-2">{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</p>
+      <p className="text-xs text-[var(--text-muted)] mt-2">{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</p>
     </div>
   )
 }
@@ -220,7 +222,7 @@ export default function ChatRoomPage() {
         setMyRole(hasOwner ? 'member' : 'owner')
       } else {
         if (existingMember.kicked_until && new Date(existingMember.kicked_until) > new Date()) {
-          alert(`You are kicked until ${new Date(existingMember.kicked_until).toLocaleTimeString()}`)
+          toast(`You can rejoin this room at ${new Date(existingMember.kicked_until).toLocaleTimeString()}.`, 'error')
           router.push('/dashboard/community')
           return
         }
@@ -366,7 +368,7 @@ export default function ChatRoomPage() {
   }
 
   // ── Handlers ─────────────────────────────────────────────────────────
-  const loadMembers = async () => {
+  async function loadMembers() {
     const { data } = await supabase.from('room_members').select('*').eq('room_id', id)
     setMembers(data || [])
   }
@@ -393,7 +395,7 @@ export default function ChatRoomPage() {
     const ext = file.name.split('.').pop()
     const path = `${id}/${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('chat-files').upload(path, file)
-    if (error) { alert('Upload failed'); setUploading(false); return }
+    if (error) { toast('Upload failed.', 'error'); setUploading(false); return }
     const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(path)
     await supabase.from('chat_messages').insert({
       room_id: id, profile_id: userId, content: '',
@@ -469,7 +471,7 @@ export default function ChatRoomPage() {
   const handleSendPoll = async () => {
     if (!pollQuestion.trim() || !userId) return
     const opts = pollOptions.filter(o => o.trim())
-    if (opts.length < 2) { alert('At least 2 options required'); return }
+    if (opts.length < 2) { toast('A poll needs at least 2 options.', 'error'); return }
     const { data: poll } = await supabase.from('room_polls').insert({
       room_id: id, profile_id: userId, question: pollQuestion.trim(), options: opts,
     }).select().single()
@@ -492,7 +494,7 @@ export default function ChatRoomPage() {
   const handleCopyInvite = () => {
     const url = window.location.href
     const text = room?.password ? `${url}\nPassword: ${room.password}` : url
-    navigator.clipboard.writeText(text).then(() => alert('Invite link copied!')).catch(() => alert('Failed to copy'))
+    navigator.clipboard.writeText(text).then(() => toast('Invite link copied.', 'success')).catch(() => toast('Could not copy the link.', 'error'))
   }
 
   const handleExportChat = () => {
@@ -510,11 +512,25 @@ export default function ChatRoomPage() {
     a.click()
   }
 
-  if (loading) return <div className="text-sm text-gray-400">Loading...</div>
-  if (!room) return <div className="text-sm text-gray-400">Room not found.</div>
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="skeleton h-8 w-1/3" />
+        <div className="skeleton h-[60dvh] rounded-2xl" />
+      </div>
+    )
+  }
+  if (!room) {
+    return (
+      <div className="empty-card rounded-2xl px-6 py-14 text-center">
+        <p className="text-sm font-medium text-[var(--text)]">Room not found</p>
+        <Link href="/dashboard/community" className="mt-3 inline-block text-sm text-[var(--accent)] hover:underline">Back to rooms</Link>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] gap-4">
+    <div className="flex h-[calc(100dvh-5rem)] gap-4">
       {emojiPickerMsg && (
         <div className="fixed inset-0 z-[5]" onClick={() => setEmojiPickerMsg(null)} />
       )}
@@ -524,40 +540,40 @@ export default function ChatRoomPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard/community" className="text-xs text-gray-400 hover:text-gray-600">Back</Link>
+            <Link href="/dashboard/community" aria-label="Back to rooms" className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"><ArrowLeft size={18} /></Link>
             <div>
               <h1 className="text-lg font-semibold">{room.name}</h1>
-              {room.description && <p className="text-xs text-gray-400">{room.description}</p>}
+              {room.description && <p className="text-xs text-[var(--text-muted)]">{room.description}</p>}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleCopyInvite} className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition">
-              🔗 Invite
+            <button onClick={handleCopyInvite} className="secondary-button rounded-lg px-3 py-1.5 text-xs">
+              <LinkSimple size={14} /> Invite
             </button>
             <span className={`text-xs px-2 py-0.5 rounded-full ${
-              myRole === 'owner' ? 'bg-yellow-100 text-yellow-700' :
-              myRole === 'moderator' ? 'bg-blue-100 text-blue-700' :
-              'bg-gray-100 text-gray-600'
+              myRole === 'owner' ? 'bg-[var(--warn-soft)] text-[var(--warn)]' :
+              myRole === 'moderator' ? 'bg-[rgb(var(--accent-rgb)/0.12)] text-[var(--accent)]' :
+              'bg-[var(--surface-soft)] text-[var(--text-muted)]'
             }`}>
               {myRole === 'owner' ? 'Owner' : myRole === 'moderator' ? 'Moderator' : 'Member'}
-              {isAdmin && ' · Admin'}
+              {isAdmin && ', admin'}
             </span>
             <button
               onClick={() => { setShowMembers(!showMembers); loadMembers() }}
-              className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition"
+              className="secondary-button rounded-lg px-3 py-1.5 text-xs"
             >
-              Members ({members.length})
+              Members <span className="font-mono">{members.length}</span>
             </button>
           </div>
         </div>
 
         {/* Pinned banner */}
         {room.pinned_message_id && room.pinned_content && (
-          <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-2 mb-3">
-            <span className="text-xs">📌</span>
-            <p className="text-xs text-gray-700 flex-1 truncate">{room.pinned_content}</p>
+          <div className="flex items-center gap-2 bg-[var(--warn-soft)] border border-[var(--warn-soft)] rounded-xl px-4 py-2 mb-3">
+            <PushPin size={14} className="shrink-0 text-[var(--accent)]" />
+            <p className="text-xs text-[var(--text)] flex-1 truncate">{room.pinned_content}</p>
             {canModerate && (
-              <button onClick={handleUnpin} className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
+              <button onClick={handleUnpin} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] flex-shrink-0" aria-label="Unpin"><X size={14} /></button>
             )}
           </div>
         )}
@@ -565,14 +581,14 @@ export default function ChatRoomPage() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto flex flex-col gap-3 mb-4">
           {messages.length === 0 && (
-            <p className="text-sm text-gray-400 text-center mt-8">No messages yet.</p>
+            <p className="text-sm text-[var(--text-muted)] text-center mt-8">No messages yet.</p>
           )}
           {messages.map(m => {
             const isMe = m.profile_id === userId
             if (m.deleted_at) {
               return (
                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  <span className="text-xs text-gray-300 italic px-4 py-2">Message deleted</span>
+                  <span className="text-xs text-[var(--text-muted)] italic px-4 py-2">Message deleted</span>
                 </div>
               )
             }
@@ -584,20 +600,20 @@ export default function ChatRoomPage() {
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
                 {canModerate && (
                   <button onClick={() => handlePin(m)} title="Pin"
-                    className="text-xs text-gray-400 hover:text-yellow-500 p-1.5 rounded hover:bg-gray-100 transition">
-                    📌
+                    className="text-xs text-[var(--text-muted)] hover:opacity-80 p-1.5 rounded hover:bg-[var(--surface-hover)] transition">
+                    <PushPin size={14} />
                   </button>
                 )}
                 <div className="relative z-[6]">
                   <button
                     onClick={e => { e.stopPropagation(); setEmojiPickerMsg(emojiPickerMsg === m.id ? null : m.id) }}
-                    className="text-xs text-gray-400 hover:text-gray-600 p-1.5 rounded hover:bg-gray-100 transition"
+                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] p-1.5 rounded hover:bg-[var(--surface-hover)] transition"
                   >
-                    😊
+                    <Smiley size={14} />
                   </button>
                   {emojiPickerMsg === m.id && (
                     <div
-                      className={`absolute bottom-full mb-1 ${side === 'right' ? 'left-0' : 'right-0'} flex gap-1 bg-white border rounded-xl shadow-lg px-2 py-1.5 z-[10]`}
+                      className={`absolute bottom-full mb-1 ${side === 'right' ? 'left-0' : 'right-0'} flex gap-1 bg-[var(--surface)] border rounded-xl shadow-lg px-2 py-1.5 z-[10]`}
                       onClick={e => e.stopPropagation()}
                     >
                       {EMOJIS.map(e => (
@@ -612,16 +628,16 @@ export default function ChatRoomPage() {
                     id: m.id,
                     preview: m.poll_id ? '[Poll]' : (m.content.slice(0, 80) || m.file_name || 'Attachment'),
                   })}
-                  className="text-xs text-gray-400 hover:text-gray-600 p-1.5 rounded hover:bg-gray-100 transition"
+                  className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] p-1.5 rounded hover:bg-[var(--surface-hover)] transition"
                 >
                   ↩
                 </button>
                 {(canModerate || isMe) && (
                   <button
                     onClick={() => setDeleteTarget({ message: m, isMe })}
-                    className="text-xs text-gray-400 hover:text-red-400 p-1.5 rounded hover:bg-gray-100 transition"
+                    className="text-xs text-[var(--text-muted)] hover:opacity-80 p-1.5 rounded hover:bg-[var(--surface-hover)] transition"
                   >
-                    ✕
+                    <X size={14} />
                   </button>
                 )}
               </div>
@@ -630,25 +646,25 @@ export default function ChatRoomPage() {
             return (
               <div key={m.id} className={`flex items-end gap-2 group ${isMe ? 'justify-end' : 'justify-start'}`}>
                 {!isMe && (
-                  <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs text-gray-400">?</span>
+                  <div className="w-7 h-7 rounded-full bg-[var(--border)] flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs text-[var(--text-muted)]">?</span>
                   </div>
                 )}
                 <div className={`max-w-[70%] flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
-                  <span className="text-xs text-gray-400 px-1">{isMe ? 'You' : 'Anonymous'}</span>
+                  <span className="text-xs text-[var(--text-muted)] px-1">{isMe ? 'You' : 'Anonymous'}</span>
                   {m.reply_preview && (
-                    <div className="text-xs px-3 py-1 rounded-lg mb-0.5 border-l-2 border-gray-400 bg-gray-50 text-gray-500 max-w-full truncate">
+                    <div className="text-xs px-3 py-1 rounded-lg mb-0.5 border-l-2 border-[var(--border-strong)] bg-[var(--surface-soft)] text-[var(--text-muted)] max-w-full truncate">
                       ↩ {m.reply_preview}
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
                     {isMe && actionButtons('left')}
-                    <div className={`rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'bg-black text-white' : 'bg-gray-100 text-gray-800'}`}>
+                    <div className={`rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--surface-soft)] text-[var(--text)]'}`}>
                       {pollData ? (
                         <PollCard poll={pollData} counts={pollData.counts} myVote={pollData.myVote}
                           totalVotes={pollData.totalVotes} onVote={i => handleVote(m.poll_id!, i)} />
                       ) : m.poll_id ? (
-                        <p className="text-xs text-gray-400">Loading poll...</p>
+                        <p className="text-xs text-[var(--text-muted)]">Loading poll...</p>
                       ) : (
                         <MessageContent message={m} isMe={isMe} />
                       )}
@@ -660,14 +676,14 @@ export default function ChatRoomPage() {
                       {Object.entries(msgReactions).map(([emoji, { count, myReacted }]) => (
                         <button key={emoji} onClick={() => handleReaction(m.id, emoji)}
                           className={`flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full border transition ${
-                            myReacted ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 hover:border-gray-400'
+                            myReacted ? 'bg-[rgb(var(--accent-rgb)/0.12)] border-[rgb(var(--accent-rgb)/0.35)] text-[var(--accent)]' : 'bg-[var(--surface)] border-[var(--border)] hover:border-[var(--border-strong)]'
                           }`}>
                           {emoji} <span>{count}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                  <span className="text-xs text-gray-400 px-1">
+                  <span className="text-xs text-[var(--text-muted)] px-1">
                     {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -679,21 +695,21 @@ export default function ChatRoomPage() {
 
         {/* Reply bar */}
         {replyTo && (
-          <div className="flex items-center gap-2 bg-gray-50 border rounded-xl px-3 py-2 mb-2">
-            <span className="text-xs text-gray-500 flex-1 truncate">↩ Replying to: {replyTo.preview}</span>
-            <button onClick={() => setReplyTo(null)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+          <div className="flex items-center gap-2 bg-[var(--surface-soft)] border rounded-xl px-3 py-2 mb-2">
+            <span className="text-xs text-[var(--text-muted)] flex-1 truncate">↩ Replying to: {replyTo.preview}</span>
+            <button onClick={() => setReplyTo(null)} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)]" aria-label="Cancel reply"><X size={14} /></button>
           </div>
         )}
 
         {/* Input */}
         <div className="flex gap-2 items-center">
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="px-3 py-3 border rounded-xl text-sm hover:bg-gray-50 transition disabled:opacity-40 flex-shrink-0">
-            {uploading ? '...' : '📎'}
+            className="px-3 py-3 border rounded-xl text-sm hover:bg-[var(--surface-hover)] transition disabled:opacity-40 flex-shrink-0">
+            {uploading ? '…' : <Paperclip size={18} />}
           </button>
           <button onClick={() => setShowPollModal(true)} title="Create poll"
-            className="px-3 py-3 border rounded-xl text-sm hover:bg-gray-50 transition flex-shrink-0">
-            📊
+            className="px-3 py-3 border rounded-xl text-sm hover:bg-[var(--surface-hover)] transition flex-shrink-0">
+            <ChartBar size={18} />
           </button>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileUpload} />
           <input type="text" placeholder="Type a message..." value={input}
@@ -701,7 +717,7 @@ export default function ChatRoomPage() {
             onKeyDown={e => e.key === 'Enter' && handleSend()}
             className="flex-1 border rounded-xl px-4 py-3 text-sm outline-none" />
           <button onClick={handleSend} disabled={!input.trim()}
-            className="px-4 py-3 bg-black text-white text-sm rounded-xl hover:bg-gray-800 transition disabled:opacity-40">
+            className="px-4 py-3 primary-button text-sm rounded-xl transition disabled:opacity-40">
             Send
           </button>
         </div>
@@ -721,16 +737,16 @@ export default function ChatRoomPage() {
                     <div>
                       <p className="text-xs font-medium">{isMe ? 'You' : 'Anonymous'}</p>
                       <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                        m.role === 'owner' ? 'bg-yellow-100 text-yellow-700' :
-                        m.role === 'moderator' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-500'
+                        m.role === 'owner' ? 'bg-[var(--warn-soft)] text-[var(--warn)]' :
+                        m.role === 'moderator' ? 'bg-[rgb(var(--accent-rgb)/0.12)] text-[var(--accent)]' :
+                        'bg-[var(--surface-soft)] text-[var(--text-muted)]'
                       }`}>
                         {m.role === 'owner' ? 'Owner' : m.role === 'moderator' ? 'Mod' : 'Member'}
                       </span>
                     </div>
                   </div>
                   {isKicked && (
-                    <p className="text-xs text-red-400">
+                    <p className="text-xs text-[var(--danger)]">
                       Kicked until {new Date(m.kicked_until!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   )}
@@ -746,12 +762,12 @@ export default function ChatRoomPage() {
                           value={kickDuration[m.profile_id] || 10}
                           onChange={e => setKickDuration(prev => ({ ...prev, [m.profile_id]: Number(e.target.value) }))}
                           className="w-12 text-xs border rounded px-1 py-0.5 outline-none" />
-                        <span className="text-xs text-gray-400">min</span>
-                        <button onClick={() => handleKick(m)} className="text-xs text-red-400 hover:text-red-600 transition">Kick</button>
+                        <span className="text-xs text-[var(--text-muted)]">min</span>
+                        <button onClick={() => handleKick(m)} className="text-xs text-[var(--danger)] hover:opacity-80 transition">Kick</button>
                       </div>
                       {myRole === 'owner' && (
                         <button onClick={() => handleTransferOwner(m)}
-                          className="text-xs text-yellow-600 hover:text-yellow-800 transition text-left">
+                          className="text-xs text-[var(--warn)] hover:opacity-80 transition text-left">
                           Transfer Owner
                         </button>
                       )}
@@ -763,21 +779,21 @@ export default function ChatRoomPage() {
           </div>
           <div className="flex flex-col gap-1 pt-3 mt-3 border-t">
             <button onClick={handleCopyInvite}
-              className="text-xs text-left px-2 py-1.5 rounded hover:bg-gray-50 transition text-gray-600">
-              🔗 Copy invite link
+              className="inline-flex items-center gap-2 text-xs text-left px-2 py-1.5 rounded-lg hover:bg-[var(--surface-hover)] transition text-[var(--text-muted)]">
+              <LinkSimple size={14} /> Copy invite link
             </button>
             {(myRole === 'owner' || isAdmin) && (
               <button onClick={handleExportChat}
-                className="text-xs text-left px-2 py-1.5 rounded hover:bg-gray-50 transition text-gray-600">
-                ⬇️ Export chat
+                className="inline-flex items-center gap-2 text-xs text-left px-2 py-1.5 rounded-lg hover:bg-[var(--surface-hover)] transition text-[var(--text-muted)]">
+                <DownloadSimple size={14} /> Export chat
               </button>
             )}
             {canDeleteRoom && (
               <button
                 onClick={() => { setDeleteRoomInput(''); setShowDeleteRoomModal(true) }}
-                className="text-xs text-left px-2 py-1.5 rounded hover:bg-gray-50 transition text-red-500"
+                className="inline-flex items-center gap-2 text-xs text-left px-2 py-1.5 rounded-lg hover:bg-[var(--danger-soft)] transition text-[var(--danger)]"
               >
-                🗑 Delete room
+                <Trash size={14} /> Delete room
               </button>
             )}
           </div>
@@ -787,30 +803,30 @@ export default function ChatRoomPage() {
       {/* ── 메시지 삭제 모달 ── */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-80 flex flex-col gap-3">
+          <div className="bg-[var(--surface)] rounded-2xl p-6 w-80 flex flex-col gap-3">
             <h2 className="text-base font-semibold">Delete message?</h2>
-            <p className="text-xs text-gray-500 border rounded-xl px-3 py-2 bg-gray-50 line-clamp-2">
+            <p className="text-xs text-[var(--text-muted)] border rounded-xl px-3 py-2 bg-[var(--surface-soft)] line-clamp-2">
               {deleteTarget.message.content || (deleteTarget.message.file_name ?? '[Attachment]')}
             </p>
             <button
               onClick={() => handleDeleteForMe(deleteTarget.message.id)}
-              className="w-full px-4 py-2.5 border text-sm rounded-xl hover:bg-gray-50 transition text-left"
+              className="w-full px-4 py-2.5 border text-sm rounded-xl hover:bg-[var(--surface-hover)] transition text-left"
             >
               나에게서만 삭제
-              <span className="block text-xs text-gray-400 mt-0.5">내 화면에서만 사라집니다.</span>
+              <span className="block text-xs text-[var(--text-muted)] mt-0.5">내 화면에서만 사라집니다.</span>
             </button>
             {canDeleteForEveryone && (
               <button
                 onClick={() => handleDeleteForEveryone(deleteTarget.message.id)}
-                className="w-full px-4 py-2.5 bg-red-500 text-white text-sm rounded-xl hover:bg-red-600 transition text-left"
+                className="w-full px-4 py-2.5 bg-[var(--danger)] text-white text-sm rounded-xl hover:opacity-90 transition text-left"
               >
                 Delete for everyone
-                <span className="block text-xs text-red-200 mt-0.5">모든 사람의 화면에서 삭제됩니다.</span>
+                <span className="block text-xs text-[var(--danger)] mt-0.5">모든 사람의 화면에서 삭제됩니다.</span>
               </button>
             )}
             <button
               onClick={() => setDeleteTarget(null)}
-              className="text-xs text-gray-400 hover:text-gray-600 transition text-center"
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition text-center"
             >
               Cancel
             </button>
@@ -821,14 +837,14 @@ export default function ChatRoomPage() {
       {/* ── 방 삭제 모달 ── */}
       {showDeleteRoomModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-80 flex flex-col gap-4">
+          <div className="bg-[var(--surface)] rounded-2xl p-6 w-80 flex flex-col gap-4">
             <div>
-              <h2 className="text-base font-semibold text-red-500">Delete Room</h2>
-              <p className="text-xs text-gray-500 mt-1">
+              <h2 className="text-base font-semibold text-[var(--danger)]">Delete Room</h2>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
                 이 작업은 되돌릴 수 없습니다. 계속하려면 방 이름을 입력하세요.
               </p>
             </div>
-            <div className="bg-gray-50 border rounded-lg px-3 py-2 text-sm font-medium text-gray-700">
+            <div className="bg-[var(--surface-soft)] border rounded-lg px-3 py-2 text-sm font-medium text-[var(--text)]">
               {room.name}
             </div>
             <input
@@ -836,19 +852,19 @@ export default function ChatRoomPage() {
               placeholder="방 이름 입력..."
               value={deleteRoomInput}
               onChange={e => setDeleteRoomInput(e.target.value)}
-              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:border-red-400"
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--danger)]"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => setShowDeleteRoomModal(false)}
-                className="flex-1 px-4 py-2 border text-sm rounded-xl hover:bg-gray-50 transition"
+                className="flex-1 px-4 py-2 border text-sm rounded-xl hover:bg-[var(--surface-hover)] transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteRoomConfirm}
                 disabled={deleteRoomInput !== room.name}
-                className="flex-1 px-4 py-2 bg-red-500 text-white text-sm rounded-xl hover:bg-red-600 transition disabled:opacity-40"
+                className="flex-1 px-4 py-2 bg-[var(--danger)] text-white text-sm rounded-xl hover:opacity-90 transition disabled:opacity-40"
               >
                 Delete
               </button>
@@ -860,35 +876,35 @@ export default function ChatRoomPage() {
       {/* Poll modal */}
       {showPollModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowPollModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-96" onClick={e => e.stopPropagation()}>
+          <div className="bg-[var(--surface)] rounded-2xl p-6 w-96" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-4">Create Poll</h2>
             <input placeholder="Question" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)}
-              className="w-full border rounded-xl px-3 py-2 text-sm outline-none mb-3 focus:border-gray-400" />
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none mb-3 focus:border-[var(--accent)]" />
             <div className="flex flex-col gap-2 mb-2">
               {pollOptions.map((opt, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <input placeholder={`Option ${i + 1}`} value={opt}
                     onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))}
-                    className="flex-1 border rounded-xl px-3 py-2 text-sm outline-none focus:border-gray-400" />
+                    className="flex-1 border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--accent)]" />
                   {pollOptions.length > 2 && (
                     <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))}
-                      className="text-xs text-gray-400 hover:text-red-400 transition">✕</button>
+                      className="text-xs text-[var(--text-muted)] hover:opacity-80 transition" aria-label="Remove option"><X size={14} /></button>
                   )}
                 </div>
               ))}
             </div>
             {pollOptions.length < 4 && (
               <button onClick={() => setPollOptions(prev => [...prev, ''])}
-                className="text-xs text-gray-400 hover:text-gray-600 mb-4 transition">
+                className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] mb-4 transition">
                 + Add option
               </button>
             )}
             <div className="flex gap-2 mt-4">
               <button onClick={() => setShowPollModal(false)}
-                className="flex-1 px-4 py-2 border text-sm rounded-xl hover:bg-gray-50 transition">Cancel</button>
+                className="flex-1 px-4 py-2 border text-sm rounded-xl hover:bg-[var(--surface-hover)] transition">Cancel</button>
               <button onClick={handleSendPoll}
                 disabled={!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2}
-                className="flex-1 px-4 py-2 bg-black text-white text-sm rounded-xl hover:bg-gray-800 transition disabled:opacity-40">
+                className="flex-1 px-4 py-2 primary-button text-sm rounded-xl transition disabled:opacity-40">
                 Send Poll
               </button>
             </div>

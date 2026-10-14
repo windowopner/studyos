@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { askClaude } from '@/lib/ai'
 
 export async function POST(req: Request) {
   const { messages, assignment, note } = await req.json()
@@ -18,25 +19,15 @@ Write in plain conversational text only.`
     systemPrompt += `\n\nRelevant notes: "${note.title}".\n${note.content}`
   }
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    }),
+  const result = await askClaude({
+    max_tokens: 1000,
+    system: systemPrompt,
+    messages: messages.map((m: { role: string; content: string }) => ({
+      role: m.role,
+      content: m.content,
+    })),
   })
+  if (!result.ok) return result.response
 
-  const data = await res.json()
-  const reply = data.content[0].text
-  return NextResponse.json({ reply })
+  return NextResponse.json({ reply: result.text })
 }

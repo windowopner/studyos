@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { askClaude } from '@/lib/ai'
+import { requireGoogleToken } from '@/lib/google-server'
 
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const cookieStore = await cookies()
-  const accessToken = cookieStore.get('google_access_token')?.value
-
-  if (!accessToken) {
-    return NextResponse.json({ error: 'No access token' }, { status: 401 })
-  }
+  const google = await requireGoogleToken()
+  if (!google.ok) return google.response
+  const accessToken = google.token
 
   const { fileId, assignmentTitle, assignmentDescription } = await req.json()
 
@@ -25,40 +23,30 @@ export async function POST(req: Request) {
   const arrayBuffer = await fileRes.arrayBuffer()
   const base64 = Buffer.from(arrayBuffer).toString('base64')
 
-  const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: {
-              type: 'base64',
-              media_type: 'application/pdf',
-              data: base64,
-            },
+  const result = await askClaude({
+    max_tokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: base64,
           },
-          {
-            type: 'text',
-            text: `This is an attachment for the assignment: "${assignmentTitle}".
+        },
+        {
+          type: 'text',
+          text: `This is an attachment for the assignment: "${assignmentTitle}".
 ${assignmentDescription ? `Assignment description: ${assignmentDescription}` : ''}
 
 Please summarize the key points of this document and explain what the student needs to do for this assignment.`,
-          },
-        ],
-      }],
-    }),
+        },
+      ],
+    }],
   })
+  if (!result.ok) return result.response
 
-  const aiData = await aiRes.json()
-  const summary = aiData.content[0].text
-  return NextResponse.json({ summary })
+  return NextResponse.json({ summary: result.text })
 }

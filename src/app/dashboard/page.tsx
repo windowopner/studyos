@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, ChatCircleText, NotePencil, Plus } from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
 import { pickJoined, type JoinedRelation } from '@/lib/relations'
 import { spotlightProps } from '@/lib/spotlight'
+import { dueLabel } from '@/lib/dates'
 
 type SubjectData = {
   name: string
@@ -36,6 +38,22 @@ type RawNote = Omit<Note, 'subjects'> & {
   subjects: JoinedRelation<SubjectData>
 }
 
+function greetingFor(hour: number) {
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function SubjectTag({ subject }: { subject: SubjectBadge }) {
+  if (!subject) return null
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: subject.color }} />
+      {subject.name}
+    </span>
+  )
+}
+
 export default function DashboardPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [notes, setNotes] = useState<Note[]>([])
@@ -47,30 +65,22 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('name')
-        .eq('id', user.id)
-        .single()
+      const [{ data: profile }, { data: upcoming }, { data: recentNotes }] = await Promise.all([
+        supabase.from('profiles').select('name').eq('id', user.id).single(),
+        // Everything not done, overdue first, then by due date; undated work at the end.
+        supabase
+          .from('assignments')
+          .select('id, title, due_date, status, subjects(name, color)')
+          .neq('status', 'done')
+          .order('due_date', { ascending: true, nullsFirst: false }),
+        supabase
+          .from('notes')
+          .select('id, title, updated_at, subjects(name, color)')
+          .order('updated_at', { ascending: false })
+          .limit(4),
+      ])
 
       if (profile) setName(profile.name || '')
-
-      const today = new Date().toISOString().split('T')[0]
-
-      const { data: upcoming } = await supabase
-        .from('assignments')
-        .select('id, title, due_date, status, subjects(name, color)')
-        .neq('status', 'done')
-        .or(`due_date.gte.${today},due_date.is.null`)
-        .order('due_date', { ascending: true })
-        .limit(5)
-
-      const { data: recentNotes } = await supabase
-        .from('notes')
-        .select('id, title, updated_at, subjects(name, color)')
-        .order('updated_at', { ascending: false })
-        .limit(5)
-
       setAssignments(((upcoming || []) as RawAssignment[]).map((assignment) => ({
         ...assignment,
         subjects: pickJoined(assignment.subjects),
@@ -85,224 +95,170 @@ export default function DashboardPage() {
     load()
   }, [])
 
-  const greeting = name ? `Welcome back, ${name.split(' ')[0]}` : 'Welcome back'
+  const firstName = name.split(' ')[0]
+  const today = useMemo(
+    () => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()),
+    []
+  )
 
-  const overviewStats = useMemo(() => {
-    const nextDue = assignments.find((assignment) => assignment.due_date)?.due_date
-
+  const stats = useMemo(() => {
+    const labels = assignments.map((assignment) => dueLabel(assignment.due_date))
     return [
-      {
-        label: 'Open assignments',
-        value: `${assignments.length}`,
-        detail: assignments.length > 0 ? 'Ready to tackle' : 'All clear right now',
-      },
-      {
-        label: 'Fresh notes',
-        value: `${notes.length}`,
-        detail: notes.length > 0 ? 'Recently updated' : 'Nothing new yet',
-      },
-      {
-        label: 'Next deadline',
-        value: nextDue ? new Date(nextDue).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Flexible',
-        detail: nextDue ? 'Closest due date' : 'No dated task yet',
-      },
+      { label: 'Open', value: assignments.length },
+      { label: 'Due in 3 days', value: labels.filter((label) => label.soon).length },
+      { label: 'Overdue', value: labels.filter((label) => label.overdue).length, alert: true },
     ]
-  }, [assignments, notes])
-
-  if (loading) {
-    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
-  }
+  }, [assignments])
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <section className="glass-panel rounded-[32px] px-6 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="page-kicker">Dashboard</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)] sm:text-4xl">
-              {greeting}
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--text-muted)] sm:text-[15px]">
-              See assignments, notes, and tutor in one place.
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/dashboard/search"
-                className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold"
-              >
-                Search
-              </Link>
-              <Link
-                href="/dashboard/tutor"
-                className="secondary-button rounded-2xl px-5 py-3 text-sm font-medium"
-              >
-                AI Tutor
-              </Link>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3 xl:w-[34rem]">
-            {overviewStats.map((stat) => (
-              <div
-                key={stat.label}
-                className="interactive-card rounded-[28px] px-4 py-4"
-                {...spotlightProps}
-              >
-                <p className="relative z-10 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                  {stat.label}
-                </p>
-                <p className="relative z-10 mt-3 text-2xl font-semibold text-[var(--text)]">
-                  {stat.value}
-                </p>
-                <p className="relative z-10 mt-2 text-sm text-[var(--text-muted)]">
-                  {stat.detail}
-                </p>
-              </div>
-            ))}
-          </div>
+    <div>
+      <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs text-[var(--text-muted)]">{today}</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-[28px]">
+            {greetingFor(new Date().getHours())}{firstName ? `, ${firstName}` : ''}
+          </h1>
         </div>
-      </section>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <section className="glass-panel rounded-[30px] px-5 py-5 sm:px-6 sm:py-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="section-label">Upcoming</p>
-              <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Assignments on deck</h2>
-            </div>
-            <Link href="/dashboard/assignments" className="ghost-button text-sm font-medium">
-              View all
-            </Link>
-          </div>
-
-          {assignments.length === 0 ? (
-            <div className="empty-card rounded-[24px] px-5 py-8 text-center">
-              <p className="text-sm text-[var(--text-muted)]">No upcoming assignments right now.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {assignments.map((assignment) => (
-                <Link
-                  key={assignment.id}
-                  href={`/dashboard/assignments/${assignment.id}`}
-                  className="interactive-card block rounded-[24px] px-4 py-4"
-                  {...spotlightProps}
-                >
-                  <div className="relative z-10 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {assignment.subjects && (
-                        <span
-                          className="mb-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium text-white"
-                          style={{ backgroundColor: assignment.subjects.color }}
-                        >
-                          {assignment.subjects.name}
-                        </span>
-                      )}
-                      <p className="text-sm font-semibold text-[var(--text)]">
-                        {assignment.title}
-                      </p>
-                      <p className="mt-2 text-xs text-[var(--text-muted)]">
-                        {assignment.due_date
-                          ? `Due ${new Date(assignment.due_date).toLocaleDateString()}`
-                          : 'No due date'}
-                      </p>
-                    </div>
-
-                    <span className="rounded-full border border-white/10 bg-white/6 px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
-                      {assignment.status === 'in_progress' ? 'In progress' : 'To do'}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-
-          <Link
-            href="/dashboard/assignments/new"
-            className="secondary-button mt-4 block rounded-[20px] px-4 py-3 text-center text-sm font-medium"
-          >
-            + New Assignment
+        <div className="flex flex-wrap gap-2">
+          <Link href="/dashboard/notes/new" className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+            <NotePencil size={16} />
+            New note
           </Link>
-        </section>
-
-        <section className="glass-panel rounded-[30px] px-5 py-5 sm:px-6 sm:py-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="section-label">Recent</p>
-              <h2 className="mt-2 text-xl font-semibold text-[var(--text)]">Notes you touched lately</h2>
-            </div>
-            <Link href="/dashboard/notes" className="ghost-button text-sm font-medium">
-              View all
-            </Link>
-          </div>
-
-          {notes.length === 0 ? (
-            <div className="empty-card rounded-[24px] px-5 py-8 text-center">
-              <p className="text-sm text-[var(--text-muted)]">No notes yet — let’s start something new.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {notes.map((note) => (
-                <Link
-                  key={note.id}
-                  href={`/dashboard/notes/${note.id}`}
-                  className="interactive-card block rounded-[24px] px-4 py-4"
-                  {...spotlightProps}
-                >
-                  <div className="relative z-10">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        {note.subjects && (
-                          <span
-                            className="mb-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium text-white"
-                            style={{ backgroundColor: note.subjects.color }}
-                          >
-                            {note.subjects.name}
-                          </span>
-                        )}
-                        <p className="text-sm font-semibold text-[var(--text)]">
-                          {note.title}
-                        </p>
-                      </div>
-                      <span className="text-[11px] text-[var(--text-muted)]">
-                        {new Date(note.updated_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-
-          <Link
-            href="/dashboard/notes/new"
-            className="secondary-button mt-4 block rounded-[20px] px-4 py-3 text-center text-sm font-medium"
-          >
-            + New Note
+          <Link href="/dashboard/assignments/new" className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+            <Plus size={16} weight="bold" />
+            New assignment
           </Link>
-        </section>
+        </div>
       </div>
 
-      <Link
-        href="/dashboard/tutor"
-        className="interactive-card mt-6 block rounded-[30px] px-6 py-6 sm:px-8 sm:py-7"
-        {...spotlightProps}
-      >
-        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="page-kicker">AI Tutor</p>
-            <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Need help?</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-              Open AI Tutor for this work.
-            </p>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <section className="glass-panel rounded-2xl p-5 sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-[var(--text)]">Up next</h2>
+            <Link href="/dashboard/assignments" className="ghost-button group inline-flex items-center gap-1 text-sm">
+              All assignments
+              <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+            </Link>
           </div>
 
-          <div className="secondary-button rounded-2xl px-4 py-3 text-sm font-medium text-center">
-            Open tutor
-          </div>
+          {loading ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map((row) => <div key={row} className="skeleton h-[60px]" />)}
+            </div>
+          ) : assignments.length === 0 ? (
+            <div className="empty-card rounded-xl px-5 py-10 text-center">
+              <p className="text-sm font-medium text-[var(--text)]">Nothing due</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Add an assignment and it will show up here.</p>
+            </div>
+          ) : (
+            <ul className="-mx-2">
+              {assignments.slice(0, 6).map((assignment) => {
+                const due = dueLabel(assignment.due_date)
+                return (
+                  <li key={assignment.id}>
+                    <Link
+                      href={`/dashboard/assignments/${assignment.id}`}
+                      className="group flex items-center justify-between gap-4 rounded-xl px-2 py-3 hover:bg-[var(--surface-hover)]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[var(--text)]">{assignment.title}</p>
+                        <div className="mt-1 flex items-center gap-3">
+                          <SubjectTag subject={assignment.subjects} />
+                          {assignment.status === 'in_progress' && (
+                            <span className="text-xs text-[var(--accent)]">In progress</span>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 font-mono text-xs ${
+                          due.overdue ? 'text-[var(--danger)]' : due.soon ? 'text-[var(--text)]' : 'text-[var(--text-muted)]'
+                        }`}
+                      >
+                        {due.text}
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        <div className="flex flex-col gap-6">
+          <section className="glass-panel rounded-2xl p-5 sm:p-6">
+            <h2 className="text-base font-semibold text-[var(--text)]">At a glance</h2>
+            <dl className="mt-4 grid grid-cols-3 gap-4">
+              {stats.map((stat) => (
+                <div key={stat.label}>
+                  <dt className="text-xs text-[var(--text-muted)]">{stat.label}</dt>
+                  <dd
+                    className={`mt-1 font-mono text-2xl font-medium ${
+                      stat.alert && stat.value > 0 ? 'text-[var(--danger)]' : 'text-[var(--text)]'
+                    }`}
+                  >
+                    {loading ? <span className="skeleton inline-block h-7 w-8 align-middle" /> : stat.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <Link
+            href="/dashboard/tutor"
+            className="interactive-card group flex items-center gap-4 rounded-2xl p-5"
+            {...spotlightProps}
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[rgb(var(--accent-rgb)/0.12)] text-[var(--accent)]">
+              <ChatCircleText size={20} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-[var(--text)]">Stuck on something?</span>
+              <span className="block text-sm text-[var(--text-muted)]">Ask the AI tutor about your work.</span>
+            </span>
+            <ArrowRight size={16} className="text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" />
+          </Link>
         </div>
-      </Link>
+      </div>
+
+      <section className="mt-10">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-[var(--text)]">Recent notes</h2>
+          <Link href="/dashboard/notes" className="ghost-button group inline-flex items-center gap-1 text-sm">
+            All notes
+            <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((card) => <div key={card} className="skeleton h-[104px] rounded-2xl" />)}
+          </div>
+        ) : notes.length === 0 ? (
+          <Link href="/dashboard/notes/new" className="empty-card block rounded-2xl px-5 py-8 text-center hover:border-[var(--accent)]">
+            <p className="text-sm font-medium text-[var(--text)]">No notes yet</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Write your first one.</p>
+          </Link>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {notes.map((note) => (
+              <Link
+                key={note.id}
+                href={`/dashboard/notes/${note.id}`}
+                className="interactive-card flex min-h-[104px] flex-col justify-between rounded-2xl p-4"
+                {...spotlightProps}
+              >
+                <p className="line-clamp-2 text-sm font-medium text-[var(--text)]">{note.title}</p>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <SubjectTag subject={note.subjects} />
+                  <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                    {new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

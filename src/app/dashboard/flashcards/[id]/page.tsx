@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowCounterClockwise, ArrowLeft, ArrowRight, CheckCircle, Trash } from '@phosphor-icons/react'
+import PageHeader from '@/components/page-header'
 
 type Card = {
   id: string
@@ -60,64 +63,109 @@ export default function FlashcardStudyPage() {
     router.push('/dashboard/flashcards')
   }
 
-  if (loading) return <div className="text-sm text-gray-400">Loading...</div>
-  if (cards.length === 0) return <div className="text-sm text-gray-400">No cards in this deck.</div>
+  // Space flips the card; arrow keys move between cards.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (done || cards.length === 0) return
+      const target = event.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+      if (event.key === ' ') { event.preventDefault(); setFlipped((value) => !value) }
+      if (event.key === 'ArrowRight') handleNext()
+      if (event.key === 'ArrowLeft') handlePrev()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const back = (
+    <Link href="/dashboard/flashcards" className="group inline-flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+      <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
+      Flashcards
+    </Link>
+  )
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        <div className="skeleton h-4 w-24" />
+        <div className="skeleton h-9 w-1/2" />
+        <div className="skeleton h-72 rounded-2xl" />
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        <button onClick={handleDelete} disabled={deleting} className="text-xs text-red-400 hover:text-red-600 transition disabled:opacity-40">
-          {deleting ? 'Deleting...' : 'Delete deck'}
-        </button>
-      </div>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        back={back}
+        title={title || 'Deck'}
+        actions={
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-40"
+          >
+            <Trash size={16} />
+            {deleting ? 'Deleting…' : 'Delete deck'}
+          </button>
+        }
+      />
 
-      {done ? (
-        <div className="text-center py-16 border rounded-2xl">
-          <p className="text-lg font-medium mb-2">All done!</p>
-          <p className="text-sm text-gray-400 mb-6">{cards.length} cards reviewed.</p>
-          <button onClick={handleRestart} className="px-6 py-2.5 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition">
+      {cards.length === 0 ? (
+        <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <p className="text-sm font-medium text-[var(--text)]">This deck has no cards</p>
+        </div>
+      ) : done ? (
+        <div className="glass-panel rounded-2xl px-6 py-16 text-center">
+          <CheckCircle size={36} weight="fill" className="mx-auto text-[var(--success)]" />
+          <p className="mt-4 text-lg font-semibold text-[var(--text)]">Deck finished</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">You went through all {cards.length} cards.</p>
+          <button onClick={handleRestart} className="primary-button mt-6 rounded-xl px-5 py-2 text-sm font-medium">
+            <ArrowCounterClockwise size={16} />
             Study again
           </button>
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm text-gray-400">{current + 1} / {cards.length}</span>
-            <div className="w-48 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <span className="font-mono text-sm text-[var(--text-muted)]">{current + 1} / {cards.length}</span>
+            <div className="h-1 w-40 overflow-hidden rounded-full bg-[var(--surface-soft)]">
               <div
-                className="h-full bg-black rounded-full transition-all duration-300"
+                className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300"
                 style={{ width: `${((current + 1) / cards.length) * 100}%` }}
               />
             </div>
           </div>
 
-          <div
-            onClick={() => setFlipped(!flipped)}
-            className="border rounded-2xl p-8 min-h-64 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition select-none mb-4"
+          <button
+            onClick={() => setFlipped((value) => !value)}
+            aria-label={flipped ? 'Show question' : 'Show answer'}
+            className="group block h-72 w-full [perspective:1200px]"
           >
-            <p className="text-xs text-gray-400 mb-4">{flipped ? 'Answer' : 'Question'}</p>
-            <p className="text-lg text-center font-medium">
-              {flipped ? cards[current].back : cards[current].front}
-            </p>
-            {!flipped && (
-              <p className="text-xs text-gray-400 mt-6">Click to reveal</p>
-            )}
-          </div>
-
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={handlePrev}
-              disabled={current === 0}
-              className="px-5 py-2.5 border text-sm rounded-lg hover:bg-gray-50 transition disabled:opacity-40"
+            <span
+              className="relative block h-full w-full transition-transform duration-500 [transform-style:preserve-3d] [transition-timing-function:var(--ease-out)]"
+              style={{ transform: flipped ? 'rotateY(180deg)' : 'none' }}
             >
+              <span className="glass-panel absolute inset-0 flex flex-col items-center justify-center rounded-2xl p-8 [backface-visibility:hidden] group-hover:border-[var(--border-strong)]">
+                <span className="text-xs font-medium text-[var(--text-muted)]">Question</span>
+                <span className="mt-4 text-center text-xl font-medium leading-snug text-[var(--text)]">{cards[current].front}</span>
+                <span className="absolute bottom-5 text-xs text-[var(--text-muted)]">Click or press Space to flip</span>
+              </span>
+              <span className="glass-panel absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-[var(--surface-soft)] p-8 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                <span className="text-xs font-medium text-[var(--accent)]">Answer</span>
+                <span className="mt-4 text-center text-lg leading-relaxed text-[var(--text)]">{cards[current].back}</span>
+              </span>
+            </span>
+          </button>
+
+          <div className="mt-5 flex justify-center gap-2">
+            <button onClick={handlePrev} disabled={current === 0} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+              <ArrowLeft size={16} />
               Previous
             </button>
-            <button
-              onClick={handleNext}
-              className="px-5 py-2.5 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition"
-            >
+            <button onClick={handleNext} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
               {current + 1 === cards.length ? 'Finish' : 'Next'}
+              <ArrowRight size={16} />
             </button>
           </div>
         </>

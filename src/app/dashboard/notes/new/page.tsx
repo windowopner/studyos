@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft, Sparkle } from '@phosphor-icons/react'
+import { toast } from '@/components/toaster'
+import PageHeader from '@/components/page-header'
 
 type Subject = { id: string; name: string; color: string }
 
@@ -30,29 +34,30 @@ export default function NewNotePage() {
       body: JSON.stringify({ content }),
     })
     const data = await res.json()
-    setSummary(data.summary)
     setSummarizing(false)
+    if (!res.ok) { toast(data.error || 'Could not summarize.', 'error'); return }
+    setSummary(data.summary)
   }
 
   const handleSave = async () => {
-    if (!title) return
+    if (!title.trim()) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
     const { data, error } = await supabase.from('notes').insert({
       profile_id: user.id,
-      title,
+      title: title.trim(),
       content,
       ai_summary: summary || null,
       subject_id: subjectId || null,
-      tags: tags ? tags.split(',').map(t => t.trim()) : [],
+      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
     }).select().single()
 
     setSaving(false)
 
     if (error) {
-      alert(error.message)
+      toast(error.message, 'error')
       return
     }
 
@@ -60,66 +65,67 @@ export default function NewNotePage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">New Note</h1>
-        <button
-          onClick={handleSave}
-          disabled={saving || !title}
-          className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition disabled:opacity-40"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        back={
+          <Link href="/dashboard/notes" className="group inline-flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+            <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
+            Notes
+          </Link>
+        }
+        title="New note"
+        actions={
+          <button onClick={handleSave} disabled={saving || !title.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+            {saving ? 'Saving…' : 'Save note'}
+          </button>
+        }
+      />
+
+      <div className="glass-panel rounded-2xl">
+        <div className="border-b px-5 pb-4 pt-5 sm:px-6">
+          <label htmlFor="title" className="sr-only">Title</label>
+          <input
+            id="title"
+            autoFocus
+            placeholder="Untitled"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="w-full bg-transparent text-xl font-semibold text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+          />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="subject" className="text-xs font-medium text-[var(--text-muted)]">Subject</label>
+              <select id="subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)} className="field-input rounded-lg px-3 py-2 text-sm">
+                <option value="">No subject</option>
+                {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="tags" className="text-xs font-medium text-[var(--text-muted)]">Tags, separated by commas</label>
+              <input id="tags" value={tags} onChange={(event) => setTags(event.target.value)} className="field-input rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <label htmlFor="content" className="sr-only">Note</label>
+        <textarea
+          id="content"
+          placeholder="Start writing…"
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          rows={18}
+          className="block w-full resize-y bg-transparent px-5 py-5 text-[15px] leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] sm:px-6"
+        />
       </div>
 
-      <div className="flex flex-col gap-4">
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          className="text-xl font-medium outline-none border-b pb-2"
-        />
-
-        <select
-          value={subjectId}
-          onChange={e => setSubjectId(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-2 outline-none w-48"
-        >
-          <option value="">No subject</option>
-          {subjects.map(s => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-
-        <textarea
-          placeholder="Write your notes here..."
-          value={content}
-          onChange={e => setContent(e.target.value)}
-          rows={16}
-          className="text-sm outline-none border rounded-xl p-4 resize-none"
-        />
-
-        <input
-          type="text"
-          placeholder="Tags (comma separated)"
-          value={tags}
-          onChange={e => setTags(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-2 outline-none"
-        />
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSummarize}
-            disabled={summarizing || !content}
-            className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 transition disabled:opacity-40"
-          >
-            {summarizing ? 'Summarizing...' : 'AI Summarize'}
-          </button>
-          {summary && (
-            <p className="text-sm text-gray-500 flex-1">{summary}</p>
-          )}
-        </div>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
+        <button onClick={handleSummarize} disabled={summarizing || !content.trim()} className="secondary-button shrink-0 rounded-xl px-4 py-2 text-sm font-medium">
+          <Sparkle size={16} />
+          {summarizing ? 'Summarizing…' : 'Summarize with AI'}
+        </button>
+        {summary && (
+          <p className="flex-1 rounded-xl bg-[var(--surface-soft)] px-4 py-3 text-sm leading-relaxed text-[var(--text)]">{summary}</p>
+        )}
       </div>
     </div>
   )

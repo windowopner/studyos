@@ -5,6 +5,9 @@ import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { pickJoined, type JoinedRelation } from '@/lib/relations'
+import { ArrowLeft, Cards, ChatCircleText, Minus, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
+import PageHeader from '@/components/page-header'
+import { toast } from '@/components/toaster'
 
 type SubjectData = {
   name: string
@@ -79,14 +82,14 @@ export default function NotePage() {
       .eq('id', note.id)
       .select('*, subjects(name, color)')
       .single()
-    if (!error && data) {
-      setNote({
-        ...(data as RawNote),
-        subjects: pickJoined((data as RawNote).subjects),
-      })
-      setEditing(false)
-    }
     setSaving(false)
+    if (error || !data) { toast(error?.message || 'Could not save the note.', 'error'); return }
+    setNote({
+      ...(data as RawNote),
+      subjects: pickJoined((data as RawNote).subjects),
+    })
+    setEditing(false)
+    toast('Note saved.', 'success')
   }
 
   const handleDelete = async () => {
@@ -107,7 +110,13 @@ export default function NotePage() {
       body: JSON.stringify({ content: note.content, title: note.title, count: cardCount }),
     })
 
-    const { cards } = await res.json()
+    const body = await res.json()
+    if (!res.ok || !Array.isArray(body.cards)) {
+      toast(body.error || 'Could not make flashcards.', 'error')
+      setGenerating(false)
+      return
+    }
+    const cards: { front: string; back: string }[] = body.cards
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setGenerating(false); return }
 
@@ -120,7 +129,7 @@ export default function NotePage() {
 
     if (deck) {
       await supabase.from('flashcards').insert(
-        cards.map((c: { front: string; back: string }) => ({
+        cards.map((c) => ({
           deck_id: deck.id,
           front: c.front,
           back: c.back,
@@ -132,161 +141,151 @@ export default function NotePage() {
     setGenerating(false)
   }
 
-  if (loading) return <div className="text-sm text-gray-400">Loading...</div>
-  if (!note) return <div className="text-sm text-gray-400">Note not found.</div>
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <div className="skeleton h-4 w-24" />
+        <div className="skeleton h-9 w-1/2" />
+        <div className="skeleton h-64 rounded-2xl" />
+      </div>
+    )
+  }
+  if (!note) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <p className="text-sm font-medium text-[var(--text)]">Note not found</p>
+          <Link href="/dashboard/notes" className="mt-3 inline-block text-sm text-[var(--accent)] hover:underline">Back to notes</Link>
+        </div>
+      </div>
+    )
+  }
+
+  const back = (
+    <Link href="/dashboard/notes" className="group inline-flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+      <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
+      Notes
+    </Link>
+  )
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          {note.subjects && (
-            <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: note.subjects.color }}>
-              {note.subjects.name}
-            </span>
-          )}
-          <span className="text-xs text-gray-400">
-            {new Date(note.updated_at).toLocaleDateString()}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {editing ? (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        back={back}
+        title={editing ? 'Edit note' : note.title}
+        actions={
+          editing ? (
             <>
-              <button
-                onClick={handleCancel}
-                disabled={saving}
-                className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !editTitle.trim()}
-                className="text-xs px-3 py-1.5 bg-black text-white rounded-lg hover:bg-gray-800 transition disabled:opacity-40"
-              >
-                {saving ? 'Saving...' : 'Save'}
+              <button onClick={handleCancel} disabled={saving} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</button>
+              <button onClick={handleSave} disabled={saving || !editTitle.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+                {saving ? 'Saving…' : 'Save'}
               </button>
             </>
           ) : (
             <>
-              <button
-                onClick={handleEdit}
-                className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition"
-              >
+              <button onClick={handleEdit} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+                <PencilSimple size={16} />
                 Edit
-              </button>
-              <button
-                onClick={() => setShowModal(true)}
-                disabled={generating || !note.content}
-                className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition disabled:opacity-40"
-              >
-                {generating ? 'Generating...' : 'Generate Flashcards'}
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs text-red-400 hover:text-red-600 transition disabled:opacity-40"
+                aria-label="Delete note"
+                className="rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-40"
               >
-                {deleting ? 'Deleting...' : 'Delete'}
+                <Trash size={18} />
               </button>
             </>
+          )
+        }
+      />
+
+      {!editing && (
+        <div className="-mt-4 mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[var(--text-muted)]">
+          {note.subjects && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: note.subjects.color }} />
+              {note.subjects.name}
+            </span>
           )}
-        </div>
-      </div>
-
-      {editing ? (
-        <input
-          value={editTitle}
-          onChange={e => setEditTitle(e.target.value)}
-          className="text-2xl font-semibold w-full mb-4 border-b outline-none pb-1 focus:border-black"
-          placeholder="Title"
-        />
-      ) : (
-        <h1 className="text-2xl font-semibold mb-4">{note.title}</h1>
-      )}
-
-      {note.ai_summary && !editing && (
-        <div className="bg-gray-50 border rounded-xl p-4 mb-6">
-          <p className="text-xs text-gray-400 mb-1">AI Summary</p>
-          <p className="text-sm text-gray-700">{note.ai_summary}</p>
+          <span className="font-mono text-xs">
+            Edited {new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+          {note.tags.map((tag) => (
+            <span key={tag} className="rounded-lg bg-[var(--surface-soft)] px-2 py-0.5 text-xs">{tag}</span>
+          ))}
         </div>
       )}
 
       {editing ? (
-        <textarea
-          value={editContent}
-          onChange={e => setEditContent(e.target.value)}
-          rows={16}
-          className="w-full text-sm border rounded-xl px-4 py-3 outline-none resize-none leading-relaxed focus:border-gray-400"
-          placeholder="Content"
-        />
-      ) : (
-        <div className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</div>
-      )}
-
-      {editing ? (
-        <div className="mt-4">
-          <label className="text-xs text-gray-400 mb-1 block">Tags (comma-separated)</label>
-          <input
-            value={editTags}
-            onChange={e => setEditTags(e.target.value)}
-            className="w-full text-sm border rounded-lg px-3 py-2 outline-none focus:border-gray-400"
-            placeholder="e.g. math, calculus, exam"
+        <div className="glass-panel rounded-2xl">
+          <div className="border-b px-5 pb-4 pt-5 sm:px-6">
+            <label htmlFor="edit-title" className="sr-only">Title</label>
+            <input
+              id="edit-title"
+              value={editTitle}
+              onChange={(event) => setEditTitle(event.target.value)}
+              className="w-full bg-transparent text-xl font-semibold text-[var(--text)] outline-none"
+            />
+            <label htmlFor="edit-tags" className="mt-4 block text-xs font-medium text-[var(--text-muted)]">Tags, separated by commas</label>
+            <input id="edit-tags" value={editTags} onChange={(event) => setEditTags(event.target.value)} className="field-input mt-1.5 w-full rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <label htmlFor="edit-content" className="sr-only">Note</label>
+          <textarea
+            id="edit-content"
+            value={editContent}
+            onChange={(event) => setEditContent(event.target.value)}
+            rows={18}
+            className="block w-full resize-y bg-transparent px-5 py-5 text-[15px] leading-relaxed text-[var(--text)] outline-none sm:px-6"
           />
         </div>
       ) : (
-        note.tags.length > 0 && (
-          <div className="flex gap-1 mt-6">
-            {note.tags.map((tag) => (
-              <span key={tag} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">{tag}</span>
-            ))}
-          </div>
-        )
-      )}
+        <>
+          {note.ai_summary && (
+            <div className="mb-6 rounded-2xl border-l-2 border-[var(--accent)] bg-[var(--surface-soft)] px-5 py-4">
+              <p className="text-xs font-medium text-[var(--text-muted)]">Summary</p>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text)]">{note.ai_summary}</p>
+            </div>
+          )}
+          <article className="max-w-[68ch] whitespace-pre-wrap text-[15px] leading-[1.75] text-[var(--text)]">
+            {note.content || <span className="text-[var(--text-muted)]">This note is empty.</span>}
+          </article>
 
-      {!editing && (
-        <div className="mt-8 pt-6 border-t">
-          <Link
-            href={`/dashboard/tutor?note=${note.id}`}
-            className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition"
-          >
-            Ask AI Tutor about this note
-          </Link>
-        </div>
+          <div className="mt-10 flex flex-wrap gap-2 border-t pt-6">
+            <Link href={`/dashboard/tutor?note=${note.id}`} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">
+              <ChatCircleText size={16} />
+              Ask the tutor about this
+            </Link>
+            <button
+              onClick={() => setShowModal(true)}
+              disabled={generating || !note.content}
+              className="secondary-button rounded-xl px-4 py-2 text-sm font-medium"
+            >
+              <Cards size={16} />
+              {generating ? 'Making cards…' : 'Make flashcards'}
+            </button>
+          </div>
+        </>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-80">
-            <h2 className="text-lg font-semibold mb-4">Generate Flashcards</h2>
-            <p className="text-sm text-gray-500 mb-4">How many cards do you want?</p>
-            <div className="flex items-center gap-3 mb-6">
-              <button
-                onClick={() => setCardCount(prev => Math.max(1, prev - 1))}
-                className="w-8 h-8 border rounded-lg text-sm hover:bg-gray-50 transition"
-              >
-                -
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]" onClick={() => setShowModal(false)}>
+          <div className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-[var(--shadow-pop)]" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-[var(--text)]">Make flashcards</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">The AI turns this note into a new deck.</p>
+            <p className="mt-5 text-sm text-[var(--text-muted)]">Number of cards</p>
+            <div className="mt-2 flex items-center gap-3">
+              <button onClick={() => setCardCount((previous) => Math.max(1, previous - 1))} aria-label="Fewer cards" className="secondary-button h-9 w-9 rounded-lg">
+                <Minus size={14} />
               </button>
-              <span className="text-lg font-medium w-8 text-center">{cardCount}</span>
-              <button
-                onClick={() => setCardCount(prev => Math.min(20, prev + 1))}
-                className="w-8 h-8 border rounded-lg text-sm hover:bg-gray-50 transition"
-              >
-                +
+              <span className="w-8 text-center font-mono text-lg text-[var(--text)]">{cardCount}</span>
+              <button onClick={() => setCardCount((previous) => Math.min(20, previous + 1))} aria-label="More cards" className="secondary-button h-9 w-9 rounded-lg">
+                <Plus size={14} />
               </button>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleGenerateFlashcards}
-                className="flex-1 px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition"
-              >
-                Generate
-              </button>
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <button onClick={() => setShowModal(false)} className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</button>
+              <button onClick={handleGenerateFlashcards} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">Make deck</button>
             </div>
           </div>
         </div>

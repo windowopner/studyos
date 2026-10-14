@@ -1,122 +1,88 @@
 'use client'
 
-import { supabase } from '@/lib/supabase'
-import { spotlightProps } from '@/lib/spotlight'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Cards, ChatCircleText, ClipboardText, GoogleLogo, NotePencil, type Icon } from '@phosphor-icons/react'
+import { signInWithGoogle } from '@/lib/google'
 
-const features = [
-  'Assignments, notes, flashcards, and AI tutor',
-  'Simple dashboard and search',
-  'Works with Google Classroom',
+const features: { icon: Icon; title: string; text: string }[] = [
+  { icon: ClipboardText, title: 'Assignments', text: 'Deadlines in one list, overdue work first.' },
+  { icon: NotePencil, title: 'Notes', text: 'Notes sorted by subject, searchable.' },
+  { icon: Cards, title: 'Flashcards', text: 'Decks to review before a test.' },
+  { icon: ChatCircleText, title: 'AI tutor', text: 'Questions answered with your work as context.' },
 ]
 
-export default function LoginPage() {
-  const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: [
-          'https://www.googleapis.com/auth/classroom.courses.readonly',
-          'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
-          'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
-          'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly',
-          'https://www.googleapis.com/auth/documents',
-          'https://www.googleapis.com/auth/presentations',
-          'https://www.googleapis.com/auth/drive.file',
-          'https://www.googleapis.com/auth/drive.readonly',
-        ].join(' '),
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
-    })
-  }
+function SignInButton() {
+  const params = useSearchParams()
+  const [pending, setPending] = useState(false)
+  const failed = params.get('error')
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-10">
-      <div className="floating-orb floating-orb--teal left-0 top-16 h-64 w-64" />
-      <div className="floating-orb floating-orb--violet right-0 top-24 h-72 w-72" />
+    <>
+      <button
+        onClick={async () => {
+          setPending(true)
+          await signInWithGoogle()
+        }}
+        disabled={pending}
+        className="primary-button w-full rounded-xl px-5 py-3 text-sm font-medium"
+      >
+        <GoogleLogo size={18} weight="bold" />
+        {pending ? 'Opening Google…' : 'Continue with Google'}
+      </button>
+      {failed && (
+        <p role="alert" className="mt-3 text-sm text-[var(--danger)]">
+          Sign-in didn&apos;t finish. Please try again.
+        </p>
+      )}
+    </>
+  )
+}
 
-      <div className="glass-panel relative z-10 grid w-full max-w-6xl gap-8 rounded-[36px] p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:p-10">
-        <section className="flex flex-col justify-between gap-8">
-          <div>
-            <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-              StudyOS
-            </span>
-            <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-tight text-[var(--text)] sm:text-5xl">
-              Study in one place.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
-              Assignments, notes, flashcards, and AI help.
-            </p>
+export default function LoginPage() {
+  return (
+    <div className="grid min-h-[100dvh] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <section className="flex flex-col justify-between px-6 py-8 sm:px-12 lg:py-12">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--on-accent)]">
+            S
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight text-[var(--text)]">StudyOS</span>
+        </div>
+
+        <div className="my-16 max-w-sm">
+          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-[var(--text)]">
+            Your schoolwork, in one place.
+          </h1>
+          <p className="mt-4 text-[15px] leading-relaxed text-[var(--text-muted)]">
+            Assignments, notes, flashcards, and an AI tutor that knows what you&apos;re working on.
+          </p>
+          <div className="mt-8">
+            <Suspense fallback={null}>
+              <SignInButton />
+            </Suspense>
           </div>
+          <p className="mt-4 text-xs leading-relaxed text-[var(--text-muted)]">
+            Signing in only shares your name and email. Google Classroom is optional and can be connected later in Profile.
+          </p>
+        </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              { label: 'All-in-one', value: 'Workspace' },
-              { label: 'Fast', value: 'UI' },
-              { label: 'For', value: 'Study' },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="interactive-card rounded-3xl px-4 py-4"
-                {...spotlightProps}
-              >
-                <p className="relative z-10 text-xs uppercase tracking-[0.22em] text-[var(--text-muted)]">
-                  {item.label}
-                </p>
-                <p className="relative z-10 mt-2 text-lg font-semibold text-[var(--text)]">
-                  {item.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
+        <span aria-hidden />
+      </section>
 
-        <section className="flex flex-col gap-4">
-          <div className="interactive-card rounded-[32px] p-6 sm:p-7" {...spotlightProps}>
-            <div className="relative z-10">
-              <p className="page-kicker">Sign in</p>
-              <h2 className="mt-3 text-2xl font-semibold text-[var(--text)]">Sign in with Google</h2>
-              <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-                Sign in to start.
-              </p>
-            </div>
-
-            <button
-              onClick={handleGoogleLogin}
-              className="primary-button relative z-10 mt-6 flex w-full items-center justify-center rounded-2xl px-5 py-3.5 text-sm font-semibold"
-            >
-              Continue with Google
-            </button>
-
-            <div className="relative z-10 mt-5 space-y-3">
-              {features.map((feature) => (
-                <div key={feature} className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/3 px-4 py-3">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-[var(--accent)]" />
-                  <p className="text-sm leading-6 text-[var(--text-muted)]">{feature}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="interactive-card rounded-3xl px-5 py-5" {...spotlightProps}>
-              <p className="relative z-10 text-sm font-medium text-[var(--text)]">Assignments</p>
-              <p className="relative z-10 mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                Track work and due dates.
-              </p>
-            </div>
-            <div className="interactive-card rounded-3xl px-5 py-5" {...spotlightProps}>
-              <p className="relative z-10 text-sm font-medium text-[var(--text)]">AI Tutor</p>
-              <p className="relative z-10 mt-2 text-sm leading-6 text-[var(--text-muted)]">
-                Ask questions about your work.
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
+      <section className="hidden border-l bg-[var(--surface)] lg:flex lg:items-center lg:justify-center lg:px-12">
+        <ul className="grid w-full max-w-lg grid-cols-2 gap-x-8 gap-y-10">
+          {features.map(({ icon: FeatureIcon, title, text }) => (
+            <li key={title} className="group">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl border bg-[var(--background)] text-[var(--accent)] transition-transform duration-300 group-hover:-translate-y-0.5">
+                <FeatureIcon size={20} />
+              </span>
+              <p className="mt-4 text-sm font-medium text-[var(--text)]">{title}</p>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">{text}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   )
 }

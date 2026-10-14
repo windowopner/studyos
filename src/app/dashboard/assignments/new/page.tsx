@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft } from '@phosphor-icons/react'
+import { toast } from '@/components/toaster'
+import PageHeader from '@/components/page-header'
+import Field, { inputClass } from '@/components/field'
 
 type Subject = { id: string; name: string; color: string }
 type Note = { id: string; title: string }
@@ -26,15 +31,15 @@ export default function NewAssignmentPage() {
   }, [])
 
   const handleSave = async () => {
-    if (!title) return
+    if (!title.trim()) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
     const { data, error } = await supabase.from('assignments').insert({
       profile_id: user.id,
-      title,
-      description: description || null,
+      title: title.trim(),
+      description: description.trim() || null,
       due_date: dueDate || null,
       status,
       priority,
@@ -43,93 +48,93 @@ export default function NewAssignmentPage() {
     }).select().single()
 
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { toast(error.message, 'error'); return }
     router.push(`/dashboard/assignments/${data.id}`)
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">New Assignment</h1>
-        <button
-          onClick={handleSave}
-          disabled={saving || !title}
-          className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition disabled:opacity-40"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      </div>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        back={
+          <Link href="/dashboard/assignments" className="group inline-flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)]">
+            <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
+            Assignments
+          </Link>
+        }
+        title="New assignment"
+      />
 
-      <div className="flex flex-col gap-4">
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          className="text-xl font-medium outline-none border-b pb-2"
-        />
+      <form
+        onSubmit={(event) => { event.preventDefault(); handleSave() }}
+        className="glass-panel flex flex-col gap-5 rounded-2xl p-5 sm:p-6"
+      >
+        <Field label="Title" htmlFor="title">
+          <input id="title" required autoFocus value={title} onChange={(event) => setTitle(event.target.value)} className={inputClass} />
+        </Field>
 
-        <textarea
-          placeholder="Description (optional)"
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-          rows={4}
-          className="text-sm outline-none border rounded-xl p-4 resize-none"
-        />
+        <Field label="Description" htmlFor="description" hint="Optional. The tutor reads this when you ask about the assignment.">
+          <textarea id="description" rows={4} value={description} onChange={(event) => setDescription(event.target.value)} className={`${inputClass} resize-y leading-relaxed`} />
+        </Field>
 
-        <div className="flex gap-3">
-          <select
-            value={subjectId}
-            onChange={e => setSubjectId(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1"
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label="Due date" htmlFor="due">
+            <input id="due" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className={inputClass} />
+          </Field>
+          <Field
+            label="Subject"
+            htmlFor="subject"
+            hint={subjects.length === 0 ? <Link href="/dashboard/subjects" className="text-[var(--accent)] hover:underline">Add subjects</Link> : undefined}
           >
-            <option value="">No subject</option>
-            {subjects.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-
-          <select
-            value={noteId}
-            onChange={e => setNoteId(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1"
-          >
-            <option value="">No linked note</option>
-            {notes.map(n => (
-              <option key={n.id} value={n.id}>{n.title}</option>
-            ))}
-          </select>
+            <select id="subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)} className={inputClass}>
+              <option value="">No subject</option>
+              {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+            </select>
+          </Field>
         </div>
 
-        <div className="flex gap-3">
-          <input
-            type="date"
-            value={dueDate}
-            onChange={e => setDueDate(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1"
-          />
-
-          <select
-            value={priority}
-            onChange={e => setPriority(Number(e.target.value))}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1"
-          >
-            <option value={1}>Low priority</option>
-            <option value={2}>Medium priority</option>
-            <option value={3}>High priority</option>
-          </select>
-
-          <select
-            value={status}
-            onChange={e => setStatus(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 outline-none flex-1"
-          >
-            <option value="todo">To Do</option>
-            <option value="in_progress">In Progress</option>
-            <option value="done">Done</option>
-          </select>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-[var(--text)]">Priority</span>
+            <div role="radiogroup" aria-label="Priority" className="grid grid-cols-3 rounded-xl border bg-[var(--surface)] p-1">
+              {[1, 2, 3].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  role="radio"
+                  aria-checked={priority === level}
+                  onClick={() => setPriority(level)}
+                  className={`rounded-lg py-1.5 text-sm ${
+                    priority === level ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  {level === 1 ? 'Low' : level === 2 ? 'Medium' : 'High'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Field label="Status" htmlFor="status">
+            <select id="status" value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
+              <option value="todo">To do</option>
+              <option value="in_progress">In progress</option>
+              <option value="done">Done</option>
+            </select>
+          </Field>
         </div>
-      </div>
+
+        <Field label="Linked note" htmlFor="note">
+          <select id="note" value={noteId} onChange={(event) => setNoteId(event.target.value)} className={inputClass}>
+            <option value="">None</option>
+            {notes.map((note) => <option key={note.id} value={note.id}>{note.title}</option>)}
+          </select>
+        </Field>
+
+        <div className="flex justify-end gap-2 border-t pt-5">
+          <Link href="/dashboard/assignments" className="secondary-button rounded-xl px-4 py-2 text-sm font-medium">Cancel</Link>
+          <button type="submit" disabled={saving || !title.trim()} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+            {saving ? 'Saving…' : 'Save assignment'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

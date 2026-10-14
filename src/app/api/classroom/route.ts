@@ -1,18 +1,24 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { requireGoogleToken } from '@/lib/google-server'
+
+type Material = { driveFile?: { driveFile: { id: string; title: string; alternateLink: string } } }
 
 export async function GET() {
-  const cookieStore = await cookies()
-  const accessToken = cookieStore.get('google_access_token')?.value
-
-  if (!accessToken) {
-    return NextResponse.json({ error: 'No access token' }, { status: 401 })
-  }
+  const google = await requireGoogleToken()
+  if (!google.ok) return google.response
+  const accessToken = google.token
 
   const coursesRes = await fetch(
     'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE',
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
+  if (!coursesRes.ok) {
+    // 401: the hour-long token expired. 403: Google or the school's admin refused access.
+    const message = coursesRes.status === 401
+      ? 'Your Google connection expired. Connect Google again in Profile.'
+      : 'Google Classroom refused access. Your school may block third-party apps.'
+    return NextResponse.json({ error: message, code: 'google_refused' }, { status: coursesRes.status === 401 ? 401 : 403 })
+  }
   const coursesData = await coursesRes.json()
   const courses = coursesData.courses || []
 
@@ -32,12 +38,12 @@ export async function GET() {
         title: string
         description?: string
         maxPoints?: number
-        materials?: any[]
+        materials?: Material[]
         dueDate?: { year: number; month: number; day: number }
       }) => {
         const attachments = (work.materials || [])
-          .filter((m: any) => m.driveFile)
-          .map((m: any) => ({
+          .filter((m): m is Required<Material> => !!m.driveFile)
+          .map((m) => ({
             id: m.driveFile.driveFile.id,
             title: m.driveFile.driveFile.title,
             link: m.driveFile.driveFile.alternateLink,

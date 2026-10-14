@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { spotlightProps } from '@/lib/spotlight'
+import { CaretRight, Lock, Plus } from '@phosphor-icons/react'
+import PageHeader from '@/components/page-header'
+import Field, { inputClass } from '@/components/field'
+import { toast } from '@/components/toaster'
 
 type Room = {
   id: string
@@ -60,14 +63,15 @@ export default function CommunityPage() {
       return
     }
 
-    await supabase.from('chat_rooms').insert({
-      name,
-      description: description || null,
+    const { error } = await supabase.from('chat_rooms').insert({
+      name: name.trim(),
+      description: description.trim() || null,
       created_by: user.id,
       password: password || null,
     })
 
     setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
     setShowModal(false)
     setName('')
     setDescription('')
@@ -108,106 +112,80 @@ export default function CommunityPage() {
     }
   }
 
-  if (loading) {
-    return <div className="text-sm text-[var(--text-muted)]">Loading...</div>
-  }
-
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="page-kicker">Community</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text)]">Community</h1>
-        </div>
+      <PageHeader
+        title="Community"
+        description="Study rooms you can chat in with other StudyOS users."
+        actions={
+          <button onClick={() => setShowModal(true)} className="primary-button rounded-xl px-4 py-2 text-sm font-medium">
+            <Plus size={16} weight="bold" />
+            New room
+          </button>
+        }
+      />
 
-        <button onClick={() => setShowModal(true)} className="primary-button rounded-2xl px-5 py-3 text-sm font-semibold">
-          New Room
-        </button>
-      </div>
-
-      {rooms.length === 0 ? (
-        <div className="empty-card rounded-[28px] px-6 py-12 text-center">
-          <p className="text-sm text-[var(--text-muted)]">No rooms yet. Create one!</p>
+      {loading ? (
+        <div className="space-y-2">{[0, 1, 2].map((row) => <div key={row} className="skeleton h-[76px] rounded-2xl" />)}</div>
+      ) : rooms.length === 0 ? (
+        <div className="empty-card rounded-2xl px-6 py-14 text-center">
+          <p className="text-sm font-medium text-[var(--text)]">No rooms yet</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Start one for your class or study group.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <ul className="glass-panel divide-y overflow-hidden rounded-2xl">
           {rooms.map((room) => (
-            <button
-              key={room.id}
-              onClick={() => handleRoomClick(room)}
-              className="interactive-card w-full rounded-[26px] px-5 py-5 text-left"
-              {...spotlightProps}
-            >
-              <div className="relative z-10">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-base font-semibold text-[var(--text)]">{room.name}</h2>
-                      {room.password && (
-                        <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] text-[var(--text-muted)]">
-                          Private
-                        </span>
-                      )}
-                    </div>
-
-                    {room.description && (
-                      <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">{room.description}</p>
-                    )}
-                  </div>
-
-                  <span className="text-[11px] text-[var(--text-muted)]">
-                    {new Date(room.created_at).toLocaleDateString()}
+            <li key={room.id}>
+              <button onClick={() => handleRoomClick(room)} className="group flex w-full items-center gap-4 px-5 py-4 text-left hover:bg-[var(--surface-hover)]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-sm font-semibold text-[var(--text)]">
+                  {room.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-[var(--text)]">{room.name}</span>
+                    {room.password && <Lock size={13} className="shrink-0 text-[var(--text-muted)]" aria-label="Password protected" />}
                   </span>
-                </div>
-
-                <p className="mt-3 text-xs text-[var(--text-muted)]">Created by Anonymous</p>
-              </div>
-            </button>
+                  {room.description && <span className="mt-0.5 block truncate text-sm text-[var(--text-muted)]">{room.description}</span>}
+                </span>
+                <span className="hidden shrink-0 font-mono text-xs text-[var(--text-muted)] sm:block">
+                  {new Date(room.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+                <CaretRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="glass-panel w-full max-w-sm rounded-[28px] p-6">
-            <h2 className="text-lg font-semibold text-[var(--text)]">New Room</h2>
-            <div className="mt-4 space-y-3">
-              <input
-                type="text"
-                placeholder="Room name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="field-input w-full rounded-2xl px-4 py-3 text-sm"
-              />
-              <textarea
-                placeholder="Description (optional)"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                className="field-input w-full resize-none rounded-2xl px-4 py-3 text-sm"
-              />
-              <input
-                type="password"
-                placeholder="Password (optional)"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="field-input w-full rounded-2xl px-4 py-3 text-sm"
-              />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]" onClick={() => setShowModal(false)}>
+          <div className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-[var(--shadow-pop)]" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-[var(--text)]">New room</h2>
+            <div className="mt-5 space-y-4">
+              <Field label="Name" htmlFor="room-name">
+                <input id="room-name" autoFocus value={name} onChange={(event) => setName(event.target.value)} className={inputClass} />
+              </Field>
+              <Field label="Description" htmlFor="room-description" hint="Optional.">
+                <textarea id="room-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className={`${inputClass} resize-none`} />
+              </Field>
+              <Field label="Password" htmlFor="room-password" hint="Optional. Leave empty for an open room.">
+                <input id="room-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className={inputClass} />
+              </Field>
             </div>
 
             <div className="mt-5 flex gap-2">
               <button
                 onClick={() => setShowModal(false)}
-                className="secondary-button flex-1 rounded-2xl px-4 py-3 text-sm font-medium"
+                className="secondary-button flex-1 rounded-xl px-4 py-2 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={saving || !name.trim()}
-                className="primary-button flex-1 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
+                className="primary-button flex-1 rounded-xl px-4 py-2 text-sm font-medium"
               >
-                {saving ? 'Creating...' : 'Create'}
+                {saving ? 'Creating…' : 'Create room'}
               </button>
             </div>
           </div>
@@ -215,12 +193,15 @@ export default function CommunityPage() {
       )}
 
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="glass-panel w-full max-w-sm rounded-[28px] p-6">
-            <h2 className="text-lg font-semibold text-[var(--text)]">Private Room</h2>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">Enter the password to join.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]" onClick={() => setShowPasswordModal(false)}>
+          <div className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-[var(--shadow-pop)]" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-[var(--text)]">{selectedRoom?.name}</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">This room has a password.</p>
 
+            <label htmlFor="join-password" className="sr-only">Password</label>
             <input
+              id="join-password"
+              autoFocus
               type="password"
               placeholder="Password"
               value={enteredPassword}
@@ -229,24 +210,24 @@ export default function CommunityPage() {
                 setPasswordError(false)
               }}
               onKeyDown={(event) => event.key === 'Enter' && handlePasswordSubmit()}
-              className="field-input mt-4 w-full rounded-2xl px-4 py-3 text-sm"
-              style={passwordError ? { borderColor: '#f87171' } : undefined}
+              className="field-input mt-4 w-full rounded-xl px-4 py-3 text-sm"
+              style={passwordError ? { borderColor: 'var(--danger)' } : undefined}
             />
 
             {passwordError ? (
-              <p className="mt-2 text-xs text-red-400">Incorrect password.</p>
+              <p className="mt-2 text-xs text-[var(--danger)]">Incorrect password.</p>
             ) : null}
 
             <div className="mt-5 flex gap-2">
               <button
                 onClick={() => setShowPasswordModal(false)}
-                className="secondary-button flex-1 rounded-2xl px-4 py-3 text-sm font-medium"
+                className="secondary-button flex-1 rounded-xl px-4 py-2 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handlePasswordSubmit}
-                className="primary-button flex-1 rounded-2xl px-4 py-3 text-sm font-semibold"
+                className="primary-button flex-1 rounded-xl px-4 py-2 text-sm font-medium"
               >
                 Join
               </button>

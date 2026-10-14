@@ -1,39 +1,49 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
+import {
+  BookOpen,
+  Cards,
+  CaretUpDown,
+  ChatCircleText,
+  CheckSquare,
+  ClipboardText,
+  House,
+  List,
+  MagnifyingGlass,
+  Moon,
+  NotePencil,
+  SignOut,
+  Sun,
+  UserCircle,
+  UsersThree,
+  X,
+  type Icon,
+} from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
-import { spotlightProps } from '@/lib/spotlight'
+import { disconnectGoogle } from '@/lib/google'
+import Toaster from '@/components/toaster'
 
 type Profile = {
   name: string | null
   avatar_url: string | null
 }
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', description: 'At-a-glance overview' },
-  { href: '/dashboard/search', label: 'Search', description: 'Find anything instantly' },
-  { href: '/dashboard/assignments', label: 'Assignments', description: 'Track deadlines cleanly' },
-  { href: '/dashboard/todo', label: 'To-do', description: 'Focus on what matters next' },
-  { href: '/dashboard/notes', label: 'Notes', description: 'Capture and review ideas' },
-  { href: '/dashboard/flashcards', label: 'Flashcards', description: 'Reinforce key concepts' },
-  { href: '/dashboard/tutor', label: 'AI Tutor', description: 'Study with instant help' },
-  { href: '/dashboard/subjects', label: 'Subjects', description: 'Browse course spaces' },
-  { href: '/dashboard/community', label: 'Community', description: 'Jump into shared rooms' },
-]
+type NavItem = { href: string; label: string; icon: Icon }
 
-const sectionMeta = [
-  { href: '/dashboard/search', title: 'Search', description: 'Find notes, assignments, and flashcards.' },
-  { href: '/dashboard/assignments', title: 'Assignments', description: 'See deadlines and priorities.' },
-  { href: '/dashboard/todo', title: 'To-do', description: 'Track what to do and what is done.' },
-  { href: '/dashboard/notes', title: 'Notes', description: 'See recent notes and tags.' },
-  { href: '/dashboard/flashcards', title: 'Flashcards', description: 'Review your decks.' },
-  { href: '/dashboard/tutor', title: 'AI Tutor', description: 'Ask questions with context.' },
-  { href: '/dashboard/subjects', title: 'Subjects', description: 'Open your classes.' },
-  { href: '/dashboard/community', title: 'Community', description: 'Join or create rooms.' },
-  { href: '/dashboard/profile', title: 'Profile', description: 'Manage your account.' },
+const navItems: NavItem[] = [
+  { href: '/dashboard', label: 'Home', icon: House },
+  { href: '/dashboard/search', label: 'Search', icon: MagnifyingGlass },
+  { href: '/dashboard/assignments', label: 'Assignments', icon: ClipboardText },
+  { href: '/dashboard/todo', label: 'To-do', icon: CheckSquare },
+  { href: '/dashboard/notes', label: 'Notes', icon: NotePencil },
+  { href: '/dashboard/flashcards', label: 'Flashcards', icon: Cards },
+  { href: '/dashboard/tutor', label: 'AI Tutor', icon: ChatCircleText },
+  { href: '/dashboard/subjects', label: 'Subjects', icon: BookOpen },
+  { href: '/dashboard/community', label: 'Community', icon: UsersThree },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -42,6 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { resolvedTheme, setTheme } = useTheme()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [showMenu, setShowMenu] = useState(false)
+  const [mobileNav, setMobileNav] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -77,28 +88,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const currentMeta = useMemo(() => {
-    if (pathname === '/dashboard') {
-      return {
-        title: 'Dashboard',
-        description: 'See your work at a glance.',
-      }
-    }
-
-    return sectionMeta.find((item) => pathname.startsWith(item.href)) ?? {
-      title: 'StudyOS',
-      description: 'Your study tools.',
-    }
-  }, [pathname])
-
-  const currentDate = useMemo(
-    () => new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    }).format(new Date()),
-    []
-  )
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
@@ -106,166 +95,144 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   const handleLogout = async () => {
+    await disconnectGoogle()
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  return (
-    <div className="relative min-h-screen overflow-hidden px-4 py-4 lg:px-6 lg:py-6">
-      <div className="floating-orb floating-orb--teal left-[-6rem] top-12 h-56 w-56" />
-      <div className="floating-orb floating-orb--violet right-[-5rem] top-20 h-64 w-64" />
-      <div className="floating-orb floating-orb--teal bottom-0 left-1/3 h-60 w-60" />
+  const isDark = mounted && resolvedTheme === 'dark'
 
-      <div className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-col gap-6 lg:flex-row">
-        <aside className="glass-panel flex w-full flex-col rounded-[30px] p-4 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-80 lg:p-5">
-          <div
-            className="rounded-[26px] border border-white/10 px-5 py-5"
-            style={{ background: 'linear-gradient(135deg, rgb(var(--accent-rgb) / 0.18), transparent 62%)' }}
-          >
-            <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgb(var(--accent-rgb)_/_0.18)] text-base font-semibold text-[var(--text)]">
-                S
-              </div>
-              <div>
-                <p className="page-kicker">StudyOS</p>
-                <h1 className="mt-1 text-lg font-semibold tracking-tight text-[var(--text)]">Study workspace</h1>
-              </div>
-            </div>
-            <p className="text-sm leading-6 text-[var(--text-muted)]">
-              Assignments, notes, search, and AI tools.
-            </p>
-          </div>
+  const sidebar = (
+    <>
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-2 py-1">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--on-accent)]">
+          S
+        </span>
+        <span className="text-[15px] font-semibold tracking-tight text-[var(--text)]">StudyOS</span>
+      </Link>
 
-          <nav className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
-            {navItems.map(({ href, label, description }) => {
-              const active = isActive(href)
-
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  {...spotlightProps}
-                  className="interactive-card block rounded-2xl px-4 py-3"
-                  style={active ? {
-                    background: 'linear-gradient(135deg, rgb(var(--accent-rgb) / 0.18), var(--surface))',
-                    borderColor: 'var(--border-strong)',
-                  } : undefined}
-                >
-                  <div className="relative z-10 flex items-start justify-between gap-3">
-                    <div>
-                      <p className={`text-sm font-semibold ${active ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-90'}`}>
-                        {label}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
-                        {description}
-                      </p>
-                    </div>
-                    <span
-                      className={`mt-1 h-2.5 w-2.5 rounded-full ${
-                        active ? 'bg-[var(--accent)] shadow-[0_0_18px_rgb(var(--accent-rgb)_/_0.55)]' : 'bg-white/20'
-                      }`}
-                    />
-                  </div>
-                </Link>
-              )
-            })}
-          </nav>
-
-          <div className="mt-4 space-y-3">
-            <button
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="secondary-button flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm"
+      <nav className="mt-6 flex-1 space-y-0.5 overflow-y-auto">
+        {navItems.map(({ href, label, icon: NavIcon }) => {
+          const active = isActive(href)
+          return (
+            <Link
+              key={href}
+              href={href}
+              aria-current={active ? 'page' : undefined}
+              onClick={() => setMobileNav(false)}
+              className={`group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${
+                active
+                  ? 'bg-[var(--surface-soft)] font-medium text-[var(--text)]'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]'
+              }`}
             >
-              <span className="font-medium text-[var(--text)]">
-                {mounted ? (resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode') : 'Switch theme'}
-              </span>
-              <span className="text-base leading-none">
-                {mounted ? (resolvedTheme === 'dark' ? '☀️' : '🌙') : '✨'}
-              </span>
-            </button>
+              {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[var(--accent)]" />}
+              <NavIcon
+                size={18}
+                weight={active ? 'fill' : 'regular'}
+                className={`shrink-0 transition-transform duration-200 group-hover:scale-110 ${active ? 'text-[var(--accent)]' : ''}`}
+              />
+              {label}
+            </Link>
+          )
+        })}
+      </nav>
 
-            <div ref={menuRef} className="relative">
-              <button
-                onClick={() => setShowMenu((value) => !value)}
-                className="interactive-card flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left"
-                {...spotlightProps}
+      <div className="mt-4 space-y-1 border-t pt-4">
+        <button
+          onClick={() => setTheme(isDark ? 'light' : 'dark')}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+        >
+          {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          {mounted ? (isDark ? 'Light mode' : 'Dark mode') : 'Theme'}
+        </button>
+
+        <div ref={menuRef} className="relative">
+          <button
+            onClick={() => setShowMenu((value) => !value)}
+            aria-expanded={showMenu}
+            className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
+          >
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="h-8 w-8 rounded-lg object-cover" />
+            ) : (
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-sm font-medium text-[var(--text)]">
+                {profile?.name?.[0] || '?'}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--text)]">
+              {profile?.name || 'Profile'}
+            </span>
+            <CaretUpDown size={14} className="text-[var(--text-muted)]" />
+          </button>
+
+          {showMenu && (
+            <div className="glass-panel absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-20 rounded-xl p-1 shadow-[var(--shadow-pop)]">
+              <Link
+                href="/dashboard/profile"
+                onClick={() => { setShowMenu(false); setMobileNav(false) }}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--surface-hover)]"
               >
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt="avatar"
-                    className="relative z-10 h-10 w-10 rounded-2xl object-cover"
-                  />
-                ) : (
-                  <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-2xl bg-[rgb(var(--accent-rgb)_/_0.18)] text-sm font-semibold text-[var(--text)]">
-                    {profile?.name?.[0] || '?'}
-                  </div>
-                )}
-
-                <div className="relative z-10 min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-[var(--text)]">
-                    {profile?.name || 'Profile'}
-                  </p>
-                  <p className="truncate text-xs text-[var(--text-muted)]">
-                    Personal settings and sign out
-                  </p>
-                </div>
-
-                <span className="relative z-10 text-xs text-[var(--text-muted)]">
-                  {showMenu ? '▲' : '▼'}
-                </span>
+                <UserCircle size={16} />
+                Profile
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+              >
+                <SignOut size={16} />
+                Sign out
               </button>
-
-              {showMenu && (
-                <div className="glass-panel absolute inset-x-0 bottom-[calc(100%+0.75rem)] rounded-2xl p-2">
-                  <Link
-                    href="/dashboard/profile"
-                    onClick={() => setShowMenu(false)}
-                    className="block rounded-xl px-3 py-2.5 text-sm text-[var(--text)] hover:bg-white/5"
-                  >
-                    Profile Settings
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="block w-full rounded-xl px-3 py-2.5 text-left text-sm text-red-400 hover:bg-white/5"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
-        </aside>
-
-        <div className="min-w-0 flex-1">
-          <header className="glass-panel rounded-[30px] px-6 py-6 lg:px-8">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div className="max-w-3xl">
-                <p className="page-kicker">StudyOS</p>
-                <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-3xl">
-                  {currentMeta.title}
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-muted)] sm:text-[15px]">
-                  {currentMeta.description}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-                  Quick access
-                </span>
-                <span className="soft-badge rounded-full px-3 py-1.5 text-xs font-medium">
-                  {currentDate}
-                </span>
-              </div>
-            </div>
-          </header>
-
-          <main className="relative pt-6 pb-10">
-            {children}
-          </main>
+          )}
         </div>
       </div>
+    </>
+  )
+
+  return (
+    <div className="min-h-[100dvh] lg:flex">
+      {/* Desktop sidebar */}
+      <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r bg-[var(--surface)] px-3 py-5 lg:flex">
+        {sidebar}
+      </aside>
+
+      {/* Mobile top bar and drawer */}
+      <div className="sticky top-0 z-30 flex items-center justify-between border-b bg-[var(--surface-strong)] px-4 py-3 backdrop-blur lg:hidden">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] text-xs font-semibold text-[var(--on-accent)]">S</span>
+          <span className="text-sm font-semibold text-[var(--text)]">StudyOS</span>
+        </Link>
+        <button
+          onClick={() => setMobileNav(true)}
+          aria-label="Open menu"
+          className="rounded-lg p-2 text-[var(--text)] hover:bg-[var(--surface-hover)]"
+        >
+          <List size={20} />
+        </button>
+      </div>
+      {mobileNav && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button aria-label="Close menu" className="absolute inset-0 bg-black/30" onClick={() => setMobileNav(false)} />
+          <aside className="absolute inset-y-0 left-0 flex w-64 flex-col bg-[var(--surface)] px-3 py-5 shadow-[var(--shadow-pop)]">
+            <button
+              onClick={() => setMobileNav(false)}
+              aria-label="Close menu"
+              className="absolute right-3 top-4 rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
+            >
+              <X size={18} />
+            </button>
+            {sidebar}
+          </aside>
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-8 lg:pt-10">
+          {children}
+        </main>
+      </div>
+      <Toaster />
     </div>
   )
 }

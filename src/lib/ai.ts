@@ -21,12 +21,27 @@ export async function requireUser() {
 // Every AI route calls Claude through here. A missing key, an empty balance, or any API error
 // comes back as a 503 that the pages show as "AI isn't available" instead of crashing.
 export async function askClaude(body: Record<string, unknown>): Promise<ClaudeResult> {
-  if (!(await requireUser())) {
+  const supabase = await createSupabaseServer()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
     return { ok: false, response: NextResponse.json({ error: 'Sign in first.' }, { status: 401 }) }
   }
 
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) return unavailable('AI features are off until an Anthropic API key is added.')
+
+  // A daily limit per user (see supabase/migrations/20261026010000_ai_daily_limit.sql).
+  const { data: allowed, error: limitError } = await supabase.rpc('claim_ai_request')
+  if (limitError) {
+    console.error('ai_limit_error', limitError.message)
+    return unavailable('AI is not available right now. Try again later.')
+  }
+  if (!allowed) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'You’ve used today’s AI requests. Try again tomorrow.', code: 'ai_limit' }, { status: 429 }),
+    }
+  }
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {

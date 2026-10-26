@@ -52,6 +52,10 @@ type JoinResult = { status: 'joined' | 'kicked' | 'password_required' | 'wrong_p
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢']
 const MSG_SELECT = 'id, content, created_at, profile_id, deleted_at, file_url, file_type, file_name, reply_to_id, reply_preview, poll_id'
 const FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf']
+// Chat files are private: file_url is a storage path, shown through a signed link that lasts
+// an hour and is renewed before it runs out.
+const FILE_LINK_SECONDS = 60 * 60
+const FILE_LINK_RENEW_MS = 50 * 60 * 1000
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g
 
 const roleLabel = (role: string) => (role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : 'Member')
@@ -65,21 +69,25 @@ const roleStyle = (role: string) =>
 const previewOf = (message: Message) =>
   message.poll_id ? '[Poll]' : (message.content.slice(0, 80) || message.file_name || 'Attachment')
 
-function MessageContent({ message }: { message: Message }) {
+function MessageContent({ message, fileLink }: { message: Message; fileLink?: string }) {
   if (message.file_url && message.file_type?.startsWith('image/')) {
     return (
       <div>
         {message.content && <p className="mb-2 text-sm">{message.content}</p>}
-        <a href={message.file_url} target="_blank" rel="noopener noreferrer">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={message.file_url} alt={message.file_name || 'Image'} className="max-h-64 max-w-full rounded-xl object-cover sm:max-w-xs" />
-        </a>
+        {fileLink ? (
+          <a href={fileLink} target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={fileLink} alt={message.file_name || 'Image'} className="max-h-64 max-w-full rounded-xl object-cover sm:max-w-xs" />
+          </a>
+        ) : (
+          <div className="h-40 w-56 max-w-full animate-pulse rounded-xl bg-[var(--surface-soft)]" />
+        )}
       </div>
     )
   }
   if (message.file_url) {
     return (
-      <a href={message.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border bg-[var(--surface)] p-3 hover:bg-[var(--surface-hover)]">
+      <a href={fileLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border bg-[var(--surface)] p-3 hover:bg-[var(--surface-hover)]">
         <FileText size={20} className="shrink-0 text-[var(--danger)]" />
         <span className="truncate text-xs text-[var(--text)]">{message.file_name || 'File'}</span>
       </a>
@@ -161,13 +169,29 @@ export default function ChatRoomPage() {
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+  const [fileLinks, setFileLinks] = useState<Record<string, string>>({})
 
   const fileRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<Message[]>([])
   const pollIdsRef = useRef<Set<string>>(new Set())
+  const signedPathsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => { messagesRef.current = messages }, [messages])
+
+  const signFiles = async (list: Message[], renew = false) => {
+    const paths = [...new Set(list.map((message) => message.file_url).filter((path): path is string => !!path))]
+      .filter((path) => renew || !signedPathsRef.current.has(path))
+    if (paths.length === 0) return
+    paths.forEach((path) => signedPathsRef.current.add(path))
+    const { data } = await supabase.storage.from('chat-files').createSignedUrls(paths, FILE_LINK_SECONDS)
+    const signed = (data || []).filter((item) => item.path && item.signedUrl)
+    // Leave anything that failed unmarked so the next pass tries it again.
+    paths.filter((path) => !signed.some((item) => item.path === path)).forEach((path) => signedPathsRef.current.delete(path))
+    if (signed.length) setFileLinks((previous) => ({ ...previous, ...Object.fromEntries(signed.map((item) => [item.path!, item.signedUrl!])) }))
+  }
+
+  useEffect(() => { signFiles(messages) }, [messages])
 
   // Keep the newest message in view, unless you've scrolled up to read older ones.
   useEffect(() => {
@@ -312,9 +336,12 @@ export default function ChatRoomPage() {
       if (roomData) setRoom((previous) => (previous ? { ...previous, ...roomData } : previous))
     }, 5000)
 
+    const renewLinks = setInterval(() => signFiles(messagesRef.current, true), FILE_LINK_RENEW_MS)
+
     return () => {
       supabase.removeChannel(channel)
       clearInterval(timer)
+      clearInterval(renewLinks)
     }
   }, [phase, roomId])
 
@@ -358,9 +385,8 @@ export default function ChatRoomPage() {
     const path = `${roomId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
     const { error } = await supabase.storage.from('chat-files').upload(path, file, { contentType: file.type })
     if (error) { toast(`Upload failed: ${error.message}`, 'error'); setUploading(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('chat-files').getPublicUrl(path)
     const { data, error: insertError } = await supabase.from('chat_messages').insert({
-      room_id: roomId, profile_id: userId, content: '', file_url: publicUrl, file_type: file.type, file_name: file.name.slice(0, 200),
+      room_id: roomId, profile_id: userId, content: '', file_url: path, file_type: file.type, file_name: file.name.slice(0, 200),
     }).select(MSG_SELECT).single()
     setUploading(false)
     if (insertError) { toast(insertError.message, 'error'); return }
@@ -468,7 +494,7 @@ export default function ChatRoomPage() {
       const time = new Date(message.created_at).toLocaleString()
       const who = message.profile_id === userId ? 'You' : 'Anonymous'
       if (message.poll_id) return `[${time}] ${who}: [Poll] ${polls[message.poll_id]?.question || ''}`
-      if (message.file_url) return `[${time}] ${who}: [File: ${message.file_name || message.file_url}]`
+      if (message.file_url) return `[${time}] ${who}: [File: ${message.file_name || 'Attachment'}]`
       return `[${time}] ${who}: ${message.content}`
     })
     const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain' }))
@@ -636,7 +662,7 @@ export default function ChatRoomPage() {
                       ) : message.poll_id ? (
                         <p className="text-xs opacity-70">Loading poll…</p>
                       ) : (
-                        <MessageContent message={message} />
+                        <MessageContent message={message} fileLink={message.file_url ? fileLinks[message.file_url] : undefined} />
                       )}
                     </div>
                   </div>
